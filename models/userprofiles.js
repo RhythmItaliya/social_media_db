@@ -1,0 +1,84 @@
+'use strict';
+const {
+  Model
+} = require('sequelize');
+module.exports = (sequelize, DataTypes) => {
+  class userProfiles extends Model {
+    /**
+     * Helper method for defining associations.
+     * This method is not a part of DataTypes lifecycle.
+     * The `models/index` file will call this method automatically.
+     */
+    static associate(models) {
+      userProfiles.belongsTo(models.users, { foreignKey: 'userId' });
+      userProfiles.hasOne(models.profilePhotes, { foreignKey: 'userProfileId' });
+
+
+      userProfiles.belongsToMany(models.userProfiles, {
+        through: 'friendships',
+        as: 'friends',
+        foreignKey: 'userProfile1Id',
+        otherKey: 'userProfile2Id',
+      });
+
+      userProfiles.belongsToMany(models.userProfiles, {
+        through: 'friendRequests',
+        as: 'sentFriendRequests',
+        foreignKey: 'senderId',
+        otherKey: 'receiverId',
+      });
+
+      userProfiles.belongsToMany(models.userProfiles, {
+        through: 'friendRequests',
+        as: 'receivedFriendRequests',
+        foreignKey: 'receiverId',
+        otherKey: 'senderId',
+      });
+    }
+  }
+  userProfiles.init({
+    userId: {
+      allowNull: false,
+      type: DataTypes.INTEGER
+    },
+    firstName: {
+      // allowNull: false,
+      type: DataTypes.STRING
+    },
+    lastName: {
+      // allowNull: false,
+      type: DataTypes.STRING
+    },
+    gender: {
+      // allowNull: false,
+      type: DataTypes.STRING
+    },
+    birthdate: {
+      // allowNull: false,
+      type: DataTypes.DATE
+    },
+    location: {
+      // allowNull: false,
+      type: DataTypes.STRING
+    },
+    bio: {
+      // allowNull: false,
+      type: DataTypes.TEXT
+    },
+
+    token: {
+      allowNull: false,
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV1
+    },
+    uuid: {
+      allowNull: false,
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4
+    },
+  }, {
+    sequelize,
+    modelName: 'userProfiles',
+  });
+  return userProfiles;
+};
