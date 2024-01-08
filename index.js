@@ -688,9 +688,11 @@ app.delete('/profilephotoes/delete/:uuid', async (req, res) => {
 
 // ----------------------------
 
-const { friendRequests, userProfiles, friendships } = require('./models');
 
+// FRIEND API
+const { userProfiles, friendships, friendRequests } = require('./models');
 
+// Endpoint to get a user's friends
 app.get('/userProfiles/:profileId/friends', async (req, res) => {
     const profileId = req.params.uuid;
     const user = await userProfiles.findOne(profileId, {
@@ -705,45 +707,109 @@ app.get('/userProfiles/:profileId/friends', async (req, res) => {
     res.send(user.friends);
 });
 
-app.post('/sendFriendRequest', (req, res) => {
-    const { senderId, receiverId } = req.body;
+// Endpoint to send a friend request
+app.post('/friendRequests', async (req, res) => {
+    const senderUUID = req.body.senderId;
+    const receiverUUID = req.body.receiverId;
 
-    // Save the friend request to in-memory storage
-    friendRequests.push({ senderId, receiverId });
-
-    // Notify the receiver about the new friend request
-    if (connectedClients[receiverId]) {
-        io.to(connectedClients[receiverId]).emit('friendRequestReceived', { senderId });
+    if (!senderUUID || !receiverUUID) {
+        return res.status(400).send({ error: 'SenderUUID and ReceiverUUID are required' });
     }
 
-    res.status(200).send({ success: true });
-});
+    try {
 
-io.on('connection', (socket) => {
-    console.log('User connected:', socket.id);
+        const senderProfile = await userProfiles.findOne({ where: { uuid: senderUUID } });
+        const receiverProfile = await userProfiles.findOne({ where: { uuid: receiverUUID } });
 
-    // Listen for the join event to associate socket id with user id
-    socket.on('join', (userId) => {
-        console.log('User joined:', userId);
-        connectedClients[userId] = socket.id;
-
-        // Check if there are pending friend requests for this user and emit them
-        const pendingRequests = friendRequests.filter(request => request.receiverId === userId);
-        io.to(socket.id).emit('pendingFriendRequests', pendingRequests);
-    });
-
-    socket.on('disconnect', () => {
-        // Clean up disconnected user from the connectedClients object
-        const userId = Object.keys(connectedClients).find(key => connectedClients[key] === socket.id);
-        if (userId) {
-            console.log('User disconnected:', userId);
-            delete connectedClients[userId];
+        if (!senderProfile || !receiverProfile) {
+            return res.status(400).send({ error: 'Sender or receiver profile not found' });
         }
-    });
+
+        const existingRequest = await friendRequests.findOne({
+            where: {
+                senderId: senderProfile.id,
+                receiverId: receiverProfile.id,
+            },
+        });
+
+        if (existingRequest) {
+            return res.status(400).send({ error: 'Friend request already sent' });
+        }
+
+        const friendRequest = await friendRequests.create({
+            senderId: senderProfile.id,
+            receiverId: receiverProfile.id,
+            status: '1',
+        });
+
+        res.send(friendRequest);
+    } catch (error) {
+        res.status(400).send({ error: error.message });
+    }
 });
 
 
-// Your other server setup code...
+// Endpoint to get friend requests for a specific receiver UUID with status '1'
+app.get('/friendRequests/:receiverUUID', async (req, res) => {
+    const receiverUUID = req.params.receiverUUID;
+
+    if (!receiverUUID) {
+        return res.status(400).send({ error: 'ReceiverUUID is required' });
+    }
+
+    try {
+        // Find receiver profile using UUID
+        const receiverProfile = await userProfiles.findOne({ where: { uuid: receiverUUID } });
+
+        if (!receiverProfile) {
+            return res.status(400).send({ error: 'Receiver profile not found' });
+        }
+
+        // Find all friend requests where the receiver is the specified profile and status is '1'
+        const friendRequestsList = await friendRequests.findAll({
+            where: {
+                receiverId: receiverProfile.id,
+                status: '1',
+            },
+        });
+
+
+        res.send(friendRequestsList);
+    } catch (error) {
+        res.status(400).send({ error: error.message });
+    }
+});
+
+
+
+// // Endpoint to accept a friend request and become friends
+app.put('/friendRequests/:requestId/accept', async (req, res) => {
+    const requestId = req.params.uuid;
+
+    try {
+        const friendRequest = await friendRequests.findOne(requestId);
+        if (!friendRequest) {
+            return res.status(404).send({ error: 'Friend request not found' });
+        }
+
+        friendRequest.status = '2';
+        await friendRequest.save();
+
+        await friendships.create({
+            userProfile1Id: friendRequest.senderId,
+            userProfile2Id: friendRequest.receiverId,
+            status: '2',
+        });
+
+        res.send(friendRequest);
+    } catch (error) {
+        res.status(400).send({ error: error.message });
+    }
+});
+
+
+
+
 
 
 server.listen(8080, () => console.log('connected...'));
