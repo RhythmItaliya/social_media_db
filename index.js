@@ -834,7 +834,7 @@ app.get('/api/user/profile/receiver/:uuid', async (req, res) => {
         // If a profile photo is found, construct the complete URL
         const completeImageUrl = foundProfilePhoto ? `http://static.profile.local/${foundProfilePhoto.photoURL}` : null;
         // Map the data to the desired response format
-        
+
         const responseData = {
             firstName: userProfile.firstName,
             lastName: userProfile.lastName,
@@ -847,8 +847,6 @@ app.get('/api/user/profile/receiver/:uuid', async (req, res) => {
         return res.status(500).send('Lagata hai sever me error hai...');
     }
 });
-
-
 
 
 // // Endpoint to accept a friend request and become friends
@@ -877,7 +875,30 @@ app.put('/friendRequests/:requestId/accept', async (req, res) => {
 });
 
 
-
+app.delete('/delete/friend/request/:uuid', async (req, res) => {
+    const friendRequestUUID = req.params.uuid;
+  
+    try {
+      // Check if the friend request with the given UUID exists
+      const existingFriendRequest = await friendRequests.findOne({
+        where: { uuid: friendRequestUUID },
+      });
+  
+      if (!existingFriendRequest) {
+        return res.status(404).json({ error: 'Friend request not found' });
+      }
+  
+      // Delete the friend request
+      await friendRequests.destroy({
+        where: { uuid: friendRequestUUID },
+      });
+  
+      res.status(200).send({ message: 'Friend request deleted successfully' });
+    } catch (error) {
+      console.error(error);
+      res.status(500).send({ error: 'Internal Server Error' });
+    }
+  });
 
 
 
