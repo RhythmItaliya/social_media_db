@@ -690,7 +690,7 @@ app.delete('/profilephotoes/delete/:uuid', async (req, res) => {
 
 
 // FRIEND API
-const { userProfiles, friendships, friendRequests } = require('./models');
+const { userProfiles, friendships, friendRequests, profilePhotes } = require('./models');
 
 // Endpoint to get a user's friends
 app.get('/userProfiles/:profileId/friends', async (req, res) => {
@@ -749,7 +749,8 @@ app.post('/friendRequests', async (req, res) => {
 });
 
 
-// // Endpoint to get friend requests for a specific receiver UUID with status '1' 
+
+
 app.get('/friendRequests/:receiverUUID', async (req, res) => {
     const receiverUUID = req.params.receiverUUID;
 
@@ -758,14 +759,12 @@ app.get('/friendRequests/:receiverUUID', async (req, res) => {
     }
 
     try {
-        // Find receiver profile using UUID
         const receiverProfile = await userProfiles.findOne({ where: { uuid: receiverUUID } });
 
         if (!receiverProfile) {
             return res.status(400).send({ error: 'Receiver profile not found' });
         }
 
-        // Find all friend requests where the receiver is the specified profile and status is '1'
         const friendRequestsList = await friendRequests.findAll({
             where: {
                 receiverId: receiverProfile.id,
@@ -781,72 +780,104 @@ app.get('/friendRequests/:receiverUUID', async (req, res) => {
             return res.status(404).json({ error: 'Friend requests not found' });
         }
 
-        // Extract relevant information for each friend request
-        const formattedRequests = friendRequestsList.map(request => {
-            const senderProfile = request.sender || {};
-            const receiverProfile = request.receiver || {};
+        const senderUUIDs = friendRequestsList.map(request => request.sender.uuid);
+
+        const senderProfilesPromises = senderUUIDs.map(async (senderUUID) => {
+            return new Promise((resolve, reject) => {
+                const api2Url = `http://localhost:8080/api/user/profile/receiver/${senderUUID}`;
+
+                http.get(api2Url, (api2Response) => {
+                    let data = '';
+
+                    api2Response.on('data', (chunk) => {
+                        data += chunk;
+                    });
+
+                    api2Response.on('end', () => {
+                        resolve(JSON.parse(data));
+                    });
+                }).on('error', (error) => {
+                    console.error(`Error fetching sender profile for UUID ${senderUUID}: ${error.message}`);
+                    reject(error);
+                });
+            });
+        });
+
+        const senderProfiles = await Promise.all(senderProfilesPromises);
+
+        const combinedResponses = friendRequestsList.map((request, index) => {
+            const senderProfile = senderProfiles[index] || {};
 
             return {
-                uuid: request.uuid,
-                sender: {
-                    uuid: senderProfile.uuid,
-                    // Include other relevant sender profile fields
+                friendRequest: {
+                    uuid: request.uuid,
+                    sender: {
+                        uuid: request.sender.uuid,
+                    },
+                    receiver: {
+                        uuid: request.receiver.uuid,
+                    },
                 },
-                receiver: {
-                    uuid: receiverProfile.uuid,
+                senderProfile: {
+                    firstName: senderProfile.firstName,
+                    lastName: senderProfile.lastName,
+                    completeImageUrl: senderProfile.completeImageUrl,
                 },
             };
         });
 
-        return res.send(formattedRequests);
+        return res.send(combinedResponses);
     } catch (error) {
         res.status(400).send({ error: error.message });
     }
 });
 
-
+   
 app.get('/api/user/profile/receiver/:uuid', async (req, res) => {
-
-    const { userProfiles, profilePhotes } = require('./models');
     const uuid = req.params.uuid;
 
     try {
+        // Find the user profile based on the UUID
         const userProfile = await userProfiles.findOne({
             where: { uuid },
             attributes: ['id', 'firstName', 'lastName'],
         });
 
+        // If user profile not found, return a 404 response
         if (!userProfile) {
             return res.status(404).send({ error: 'User profile not found' });
         }
 
+        // Find the associated profile photo based on the user profile ID
         const foundProfilePhoto = await profilePhotes.findOne({
             where: { userProfileId: userProfile.id },
             attributes: ['photoURL'],
         });
 
-        if (!foundProfilePhoto) {
-            return res.status(404).send({ error: 'Profile photo not found' });
-        }
+        // Extract data or set to null if not present
+        const firstName = userProfile.firstName || null;
+        const lastName = userProfile.lastName || null;
+        const photoURL = foundProfilePhoto ? foundProfilePhoto.photoURL : null;
 
-        const { photoURL } = foundProfilePhoto;
+        // Construct the complete image URL or set it to null if the photo is not found
+        const completeImageUrl = photoURL ? `http://static.profile.local/${photoURL}` : null;
 
-        // If a profile photo is found, construct the complete URL
-        const completeImageUrl = foundProfilePhoto ? `http://static.profile.local/${foundProfilePhoto.photoURL}` : null;
-        // Map the data to the desired response format
-
+        // Construct the response data
         const responseData = {
-            firstName: userProfile.firstName,
-            lastName: userProfile.lastName,
+            firstName: firstName,
+            lastName: lastName,
             completeImageUrl: completeImageUrl,
         };
 
+        // Send the response
         res.send(responseData);
-    } catch (e) {
-        console.log(e);
-        return res.status(500).send('Lagata hai sever me error hai...');
+    } catch (error) {
+        console.error(error);
+        // If there's an error, return a 500 response
+        return res.status(500).send('Internal Server Error');
     }
 });
+
 
 
 // // Endpoint to accept a friend request and become friends
@@ -877,28 +908,30 @@ app.put('/friendRequests/:requestId/accept', async (req, res) => {
 
 app.delete('/delete/friend/request/:uuid', async (req, res) => {
     const friendRequestUUID = req.params.uuid;
-  
+
     try {
-      // Check if the friend request with the given UUID exists
-      const existingFriendRequest = await friendRequests.findOne({
-        where: { uuid: friendRequestUUID },
-      });
-  
-      if (!existingFriendRequest) {
-        return res.status(404).json({ error: 'Friend request not found' });
-      }
-  
-      // Delete the friend request
-      await friendRequests.destroy({
-        where: { uuid: friendRequestUUID },
-      });
-  
-      res.status(200).send({ message: 'Friend request deleted successfully' });
+        // Check if the friend request with the given UUID exists
+        const existingFriendRequest = await friendRequests.findOne({
+            where: { uuid: friendRequestUUID },
+        });
+
+        if (!existingFriendRequest) {
+            return res.status(404).json({ error: 'Friend request not found' });
+        }
+
+        // Delete the friend request
+        await friendRequests.destroy({
+            where: { uuid: friendRequestUUID },
+        });
+
+        res.status(200).send({ message: 'Friend request deleted successfully' });
     } catch (error) {
-      console.error(error);
-      res.status(500).send({ error: 'Internal Server Error' });
+        console.error(error);
+        res.status(500).send({ error: 'Internal Server Error' });
     }
-  });
+});
+
+
 
 
 
