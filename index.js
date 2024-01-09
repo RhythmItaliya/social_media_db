@@ -749,7 +749,7 @@ app.post('/friendRequests', async (req, res) => {
 });
 
 
-// Endpoint to get friend requests for a specific receiver UUID with status '1'
+// // Endpoint to get friend requests for a specific receiver UUID with status '1' 
 app.get('/friendRequests/:receiverUUID', async (req, res) => {
     const receiverUUID = req.params.receiverUUID;
 
@@ -771,14 +771,83 @@ app.get('/friendRequests/:receiverUUID', async (req, res) => {
                 receiverId: receiverProfile.id,
                 status: '1',
             },
+            include: [
+                { model: userProfiles, as: 'sender' },
+                { model: userProfiles, as: 'receiver' },
+            ],
         });
 
+        if (!friendRequestsList || friendRequestsList.length === 0) {
+            return res.status(404).json({ error: 'Friend requests not found' });
+        }
 
-        res.send(friendRequestsList);
+        // Extract relevant information for each friend request
+        const formattedRequests = friendRequestsList.map(request => {
+            const senderProfile = request.sender || {};
+            const receiverProfile = request.receiver || {};
+
+            return {
+                uuid: request.uuid,
+                sender: {
+                    uuid: senderProfile.uuid,
+                    // Include other relevant sender profile fields
+                },
+                receiver: {
+                    uuid: receiverProfile.uuid,
+                },
+            };
+        });
+
+        return res.send(formattedRequests);
     } catch (error) {
         res.status(400).send({ error: error.message });
     }
 });
+
+
+app.get('/api/user/profile/receiver/:uuid', async (req, res) => {
+
+    const { userProfiles, profilePhotes } = require('./models');
+    const uuid = req.params.uuid;
+
+    try {
+        const userProfile = await userProfiles.findOne({
+            where: { uuid },
+            attributes: ['id', 'firstName', 'lastName'],
+        });
+
+        if (!userProfile) {
+            return res.status(404).send({ error: 'User profile not found' });
+        }
+
+        const foundProfilePhoto = await profilePhotes.findOne({
+            where: { userProfileId: userProfile.id },
+            attributes: ['photoURL'],
+        });
+
+        if (!foundProfilePhoto) {
+            return res.status(404).send({ error: 'Profile photo not found' });
+        }
+
+        const { photoURL } = foundProfilePhoto;
+
+        // If a profile photo is found, construct the complete URL
+        const completeImageUrl = foundProfilePhoto ? `http://static.profile.local/${foundProfilePhoto.photoURL}` : null;
+        // Map the data to the desired response format
+        
+        const responseData = {
+            firstName: userProfile.firstName,
+            lastName: userProfile.lastName,
+            completeImageUrl: completeImageUrl,
+        };
+
+        res.send(responseData);
+    } catch (e) {
+        console.log(e);
+        return res.status(500).send('Lagata hai sever me error hai...');
+    }
+});
+
 
 
 
