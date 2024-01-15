@@ -686,10 +686,10 @@ app.delete('/profilephotoes/delete/:uuid', async (req, res) => {
 });
 
 
-// ----------------------------
-
-
+// ------------------------------------------------------------------------------------  
 // FRIEND API
+
+
 const { userProfiles, friendships, friendRequests, profilePhotes } = require('./models');
 
 // Endpoint to get a user's friends
@@ -717,7 +717,6 @@ app.post('/friendRequests', async (req, res) => {
     }
 
     try {
-
         const senderProfile = await userProfiles.findOne({ where: { uuid: senderUUID } });
         const receiverProfile = await userProfiles.findOne({ where: { uuid: receiverUUID } });
 
@@ -725,6 +724,19 @@ app.post('/friendRequests', async (req, res) => {
             return res.status(400).send({ error: 'Sender or receiver profile not found' });
         }
 
+        // Check if the receiver has sent a friend request to the sender
+        const reverseRequest = await friendRequests.findOne({
+            where: {
+                senderId: receiverProfile.id,
+                receiverId: senderProfile.id,
+            },
+        });
+
+        if (reverseRequest && reverseRequest.status === '1') {
+            return res.status(400).send({ error: 'Friend request already received from the user. Cannot send a request until it is accepted or rejected.' });
+        }
+
+        // Check if there is an existing friend request from sender to receiver
         const existingRequest = await friendRequests.findOne({
             where: {
                 senderId: senderProfile.id,
@@ -733,7 +745,24 @@ app.post('/friendRequests', async (req, res) => {
         });
 
         if (existingRequest) {
-            return res.status(400).send({ error: 'Friend request already sent' });
+            if (existingRequest.status === '1') {
+                return res.status(400).send({ error: 'Friend request already sent' });
+            } else if (existingRequest.status === '2') {
+                return res.status(400).send({ error: 'Friend request already accepted. Cannot send another request.' });
+            }
+        }
+
+        // Check if there is an existing friend request from receiver to sender with status '2'
+        const reverseExistingRequest = await friendRequests.findOne({
+            where: {
+                senderId: receiverProfile.id,
+                receiverId: senderProfile.id,
+                status: '2',
+            },
+        });
+
+        if (reverseExistingRequest) {
+            return res.status(400).send({ error: 'Friend request has already been accepted. Cannot send another request.' });
         }
 
         const friendRequest = await friendRequests.create({
@@ -747,8 +776,6 @@ app.post('/friendRequests', async (req, res) => {
         res.status(400).send({ error: error.message });
     }
 });
-
-
 
 
 app.get('/friendRequests/:receiverUUID', async (req, res) => {
@@ -832,7 +859,7 @@ app.get('/friendRequests/:receiverUUID', async (req, res) => {
     }
 });
 
-   
+
 app.get('/api/user/profile/receiver/:uuid', async (req, res) => {
     const uuid = req.params.uuid;
 
@@ -880,12 +907,13 @@ app.get('/api/user/profile/receiver/:uuid', async (req, res) => {
 
 
 
-// // Endpoint to accept a friend request and become friends
 app.put('/friendRequests/:requestId/accept', async (req, res) => {
-    const requestId = req.params.uuid;
+    const requestId = req.params.requestId;
 
     try {
-        const friendRequest = await friendRequests.findOne(requestId);
+        const friendRequest = await friendRequests.findOne({
+            where: { uuid: requestId }
+        });
         if (!friendRequest) {
             return res.status(404).send({ error: 'Friend request not found' });
         }
@@ -904,6 +932,7 @@ app.put('/friendRequests/:requestId/accept', async (req, res) => {
         res.status(400).send({ error: error.message });
     }
 });
+
 
 
 app.delete('/delete/friend/request/:uuid', async (req, res) => {
@@ -930,6 +959,136 @@ app.delete('/delete/friend/request/:uuid', async (req, res) => {
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
+
+
+
+// ------------------------------------------------------------------------------------  
+
+app.get('/api/friendships/users/:profileUuid', async (req, res) => {
+    const { userProfiles, friendships } = require('./models');
+
+    try {
+        const profileUuid = req.params.profileUuid;
+
+        // Find the user profile with the given UUID
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: profileUuid },
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+
+        // Find all friendships where the user is either userProfile1 or userProfile2
+        const foundFriendships = await friendships.findAll({
+            where: {
+                [Op.or]: [
+                    { userProfile1Id: userProfile.id },
+                    { userProfile2Id: userProfile.id },
+                ],
+            },
+            include: [
+                { model: userProfiles, as: 'userProfile1' },
+                { model: userProfiles, as: 'userProfile2' },
+            ],
+        });
+
+        // Extract friend profiles from friendships
+        const friendProfiles = foundFriendships.map((friendship) => {
+            if (friendship.userProfile1.id !== userProfile.id) {
+                return friendship.userProfile1;
+            } else {
+                return friendship.userProfile2;
+            }
+        });
+
+        res.send({ friends: friendProfiles });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+//---------------------------------------------------------------------
+
+const { messages } = require('./models');
+
+
+
+io.on('connection', (socket) => {
+    const userId = socket.handshake.query.userId;
+    console.log('User connected with ID:', userId);
+
+    socket.on('join-room', ({ room }) => {
+        socket.join(room);
+        console.log(`User joined room: ${room}`);
+    });
+
+    socket.on('leave-room', ({ room }) => {
+        socket.leave(room);
+        console.log(`User left room: ${room}`);
+    });
+
+    socket.on('send-message', async (data) => {
+        try {
+            const { senderUuid, receiverUuid, content, room } = data;
+
+            const [senderUser, receiverUser] = await Promise.all([
+                userProfiles.findOne({ where: { uuid: senderUuid } }),
+                userProfiles.findOne({ where: { uuid: receiverUuid } })
+            ]);
+
+            if (!senderUser || !receiverUser) {
+                console.error('Sender or receiver not found');
+                return;
+            }
+
+            const { id: senderId } = senderUser;
+            const { id: receiverId } = receiverUser;
+
+            console.log('New message received on server:', {
+                senderId,
+                receiverId,
+                content,
+                room,
+            });
+
+            const newMessage = await messages.create({
+                senderId,
+                receiverId,
+                content,
+                roomId: room,
+            });
+
+            io.to(room).emit('new-message', newMessage);
+        } catch (error) {
+            console.error('Error processing message:', error);
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log('User disconnected with ID:', userId);
+    });
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

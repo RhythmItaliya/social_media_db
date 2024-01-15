@@ -13,7 +13,6 @@ module.exports = (sequelize, DataTypes) => {
       userProfiles.belongsTo(models.users, { foreignKey: 'userId' });
       userProfiles.hasOne(models.profilePhotes, { foreignKey: 'userProfileId' });
 
-
       userProfiles.belongsToMany(models.userProfiles, {
         through: 'friendships',
         as: 'friends',
@@ -34,8 +33,14 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'receiverId',
         otherKey: 'senderId',
       });
+
+      // sent messages
+      userProfiles.hasMany(models.messages, { foreignKey: 'senderId', as: 'sentMessages' });
+      userProfiles.hasMany(models.messages, { foreignKey: 'receiverId', as: 'receivedMessages' });
+
     }
   }
+
   userProfiles.init({
     userId: {
       allowNull: false,
