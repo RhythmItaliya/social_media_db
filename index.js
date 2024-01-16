@@ -305,33 +305,6 @@ app.post('/reset/password/:token', async (req, res) => {
 });
 
 
-// UPLOADFILE ----------------------------------------------------------------------------------------------
-app.post('/upload', (req, res) => {
-
-    try {
-
-        let originalFileName = req.body.name;
-        let fileExtension = originalFileName.split('.').pop();
-
-        let uuidN = uuid.v4();
-
-        let newFileName = uuidN + '.' + fileExtension;
-
-        let image = Buffer.from(req.body.data, 'base64');
-        let filePath = __dirname + '/uploads/' + newFileName;
-        fs.writeFileSync(filePath, image);
-
-        let fileLink = '/uploads/' + newFileName;
-        console.log(fileLink);
-
-        res.send('ok');
-    } catch (e) {
-        console.error(e);
-        return res.status(500).send('Lagata hai sever me error hai...');
-    }
-});
-
-
 
 // USERS FIND ----------------------------------------------------------------------------------------------
 
@@ -963,6 +936,7 @@ app.delete('/delete/friend/request/:uuid', async (req, res) => {
 
 
 // ------------------------------------------------------------------------------------  
+// FIND FRIENDSHPIS
 
 app.get('/api/friendships/users/:profileUuid', async (req, res) => {
     const { userProfiles, friendships } = require('./models');
@@ -1010,6 +984,7 @@ app.get('/api/friendships/users/:profileUuid', async (req, res) => {
 });
 
 //---------------------------------------------------------------------
+//CHAT
 
 const { messages } = require('./models');
 
@@ -1074,19 +1049,87 @@ io.on('connection', (socket) => {
 
 
 
+//---------------------------------------------------------------------
+// POST
+
+const { userPosts } = require('./models');
 
 
+// UPLOADFILE ----------------------------------------------------------------------------------------------
 
+// app.post('/upload', (req, res) => {
 
+//     try {
 
+//         let originalFileName = req.body.name;
+//         let fileExtension = originalFileName.split('.').pop();
 
+//         let uuidN = uuid.v4();
 
+//         let newFileName = uuidN + '.' + fileExtension;
 
+//         let image = Buffer.from(req.body.data, 'base64');
+//         let filePath = __dirname + '/uploads/' + newFileName;
+//         fs.writeFileSync(filePath, image);
 
+//         let fileLink = '/uploads/' + newFileName;
+//         console.log(fileLink);
 
+//         res.send('ok');
+//     } catch (e) {
+//         console.error(e);
+//         return res.status(500).send('Lagata hai sever me error hai...');
+//     }
+// });
 
+// CREATE POST ------------------------------------------------------------------------------------
 
+app.post('/api/posts', async (req, res) => {
+    try {
+        const { data, userProfileUuid, postText, isPhoto, caption, location, isVisibility, hashtags } = req.body;
 
+        // Check if data is a non-empty string
+        if (typeof data !== 'string' || data.trim() === '') {
+            return res.status(400).json({ success: false, error: 'Invalid or missing data' });
+        }
+
+        // File Upload Logic
+        const matches = data.match(/^data:image\/([a-zA-Z0-9]+);base64,/);
+        const fileExtension = matches ? matches[1] : 'png';
+        const uuidN = uuid.v4();
+        const newFileName = `${uuidN}.${fileExtension}`;
+        const image = Buffer.from(data.replace(/^data:image\/[a-zA-Z0-9]+;base64,/, ''), 'base64');
+        const filePath = __dirname + '/uploads/' + newFileName;
+        fs.writeFileSync(filePath, image);
+        const fileLink = newFileName;
+        console.log(fileLink);
+
+        // Post Creation Logic
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: userProfileUuid },
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ success: false, error: 'User profile not found' });
+        }
+
+        const newPost = await userPosts.create({
+            userProfileId: userProfile.id,
+            postText,
+            isPhoto,
+            caption,
+            location,
+            isVisibility,
+            postUploadURLs: fileLink,
+            hashtags,
+        });
+
+        res.status(201).json({ success: true, data: newPost });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+});
 
 
 

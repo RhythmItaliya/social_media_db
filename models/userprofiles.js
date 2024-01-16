@@ -10,9 +10,14 @@ module.exports = (sequelize, DataTypes) => {
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
+
+      // users
       userProfiles.belongsTo(models.users, { foreignKey: 'userId' });
+
+      // profile photo
       userProfiles.hasOne(models.profilePhotes, { foreignKey: 'userProfileId' });
 
+      // friends
       userProfiles.belongsToMany(models.userProfiles, {
         through: 'friendships',
         as: 'friends',
@@ -38,6 +43,8 @@ module.exports = (sequelize, DataTypes) => {
       userProfiles.hasMany(models.messages, { foreignKey: 'senderId', as: 'sentMessages' });
       userProfiles.hasMany(models.messages, { foreignKey: 'receiverId', as: 'receivedMessages' });
 
+      // posts
+      userProfiles.hasMany(models.userPosts, { foreignKey: 'userProfileId', as: 'posts', });
     }
   }
 
