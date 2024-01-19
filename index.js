@@ -1052,7 +1052,7 @@ io.on('connection', (socket) => {
 //---------------------------------------------------------------------
 // POST
 
-const { userPosts } = require('./models');
+const { userPosts, users } = require('./models');
 
 
 // UPLOADFILE ----------------------------------------------------------------------------------------------
@@ -1086,14 +1086,14 @@ const { userPosts } = require('./models');
 
 app.post('/api/posts', async (req, res) => {
     try {
-        const { data, userProfileUuid, postText, isPhoto, caption, location, isVisibility, hashtags } = req.body;
+
+        const { data } = req.body;
 
         // Check if data is a non-empty string
         if (typeof data !== 'string' || data.trim() === '') {
             return res.status(400).json({ success: false, error: 'Invalid or missing data' });
         }
 
-        // File Upload Logic
         const matches = data.match(/^data:image\/([a-zA-Z0-9]+);base64,/);
         const fileExtension = matches ? matches[1] : 'png';
         const uuidN = uuid.v4();
@@ -1106,25 +1106,187 @@ app.post('/api/posts', async (req, res) => {
 
         // Post Creation Logic
         const userProfile = await userProfiles.findOne({
-            where: { uuid: userProfileUuid },
+            where: { uuid: req.body.userProfileId },
         });
 
         if (!userProfile) {
             return res.status(404).json({ success: false, error: 'User profile not found' });
         }
 
+        const isVisibility = req.body.isVisibility;
+        const validatedIsVisibility = (isVisibility === '0' || isVisibility === '1') ? isVisibility : '0';
+        const isPublic = validatedIsVisibility === '0';
+
         const newPost = await userPosts.create({
             userProfileId: userProfile.id,
-            postText,
-            isPhoto,
-            caption,
-            location,
-            isVisibility,
+            postText: req.body.postText,
+            isPhoto: req.body.isPhoto,
+            caption: req.body.caption,
+            location: req.body.location,
+            isVisibility: validatedIsVisibility,
             postUploadURLs: fileLink,
-            hashtags,
+            hashtags: req.body.hashtags,
         });
 
-        res.status(201).json({ success: true, data: newPost });
+        return res.status(201).send({ success: true, post: newPost });
+    } catch (error) {
+        console.log(error);
+        res.status(500).send({ success: false, error: 'Internal Server Error' });
+    }
+});
+
+
+// GET POST ----------------------------------------------------------------
+
+
+
+
+// app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
+//     try {
+//         const userProfile = await userProfiles.findOne({
+//             where: { uuid: req.params.userProfileUuid },
+//             include: [
+//                 {
+//                     model: users,
+//                     attributes: ['username'],
+//                 },
+//             ],
+//         });
+
+//         if (!userProfile) {
+//             return res.status(404).json({ success: false, error: 'User profile not found' });
+//         }
+
+//         const userPostsList = await userPosts.findAll({
+//             where: { userProfileId: userProfile.id },
+//         });
+
+//             // Find the associated profile photo based on the user profile ID
+//             const foundProfilePhoto = await profilePhotes.findOne({
+//                 where: { userProfileId: userProfile.id },
+//                 attributes: ['photoURL'],
+//             });
+
+//             // Include user profile without the repositories information
+//             const userProfileWithoutRepos = {
+//                 id: userProfile.id,
+//                 username: userProfile.user.username,
+//                 photoURL: foundProfilePhoto ? foundProfilePhoto.photoURL : null,
+//             };
+
+//         // Include user profile, user information, and profile photos in the response
+//         const responseObj = {
+//             success: true,
+//             userProfile: userProfileWithoutRepos,
+//             posts: userPostsList,
+//         };
+
+//         return res.status(200).json(responseObj);
+//     } catch (error) {
+//         console.log(error);
+//         res.status(500).json({ success: false, error: 'Internal Server Error' });
+//     }
+// });
+
+
+
+
+
+app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
+    try {
+        // Find the user profile
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: req.params.userProfileUuid },
+            include: [
+                {
+                    model: users,
+                    attributes: ['username'],
+                },
+            ],
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ success: false, error: 'User profile not found' });
+        }
+
+        // Find friends of the user using the friendships model
+        const userFriends = await friendships.findAll({
+            where: {
+                [Op.or]: [
+                    { userProfile1Id: userProfile.id },
+                    { userProfile2Id: userProfile.id },
+                ],
+            },
+        });
+
+        // Extract friend user profile IDs
+        const friendUserProfileIds = userFriends.map(friendship => {
+            return friendship.userProfile1Id === userProfile.id
+                ? friendship.userProfile2Id
+                : friendship.userProfile1Id;
+        });
+
+        // Find user profiles of friends
+        const friendsUserProfiles = await userProfiles.findAll({
+            where: { id: friendUserProfileIds },
+            include: [
+                {
+                    model: users,
+                    attributes: ['username'],
+                },
+            ],
+        });
+
+        // Fetch posts of the user's friends
+        const friendsPosts = await userPosts.findAll({
+            where: { userProfileId: friendUserProfileIds },
+        });
+
+        // Find the associated profile photos for friends
+        const friendsProfilePhotos = await profilePhotes.findAll({
+            where: { userProfileId: friendUserProfileIds },
+            attributes: ['userProfileId', 'photoURL'],
+        });
+
+        // Map friends' profile photos to their respective user profiles
+        const friendsProfilePhotosMap = friendsProfilePhotos.reduce((map, photo) => {
+            map[photo.userProfileId] = photo.photoURL;
+            return map;
+        }, {});
+
+        // Fetch posts of the current user
+        const userPostsList = await userPosts.findAll({
+            where: { userProfileId: userProfile.id },
+        });
+
+        // Find the associated profile photo based on the user profile ID
+        const foundProfilePhoto = await profilePhotes.findOne({
+            where: { userProfileId: userProfile.id },
+            attributes: ['photoURL'],
+        });
+
+        // Include user profile without the repositories information
+        const userProfileWithoutRepos = {
+            id: userProfile.id,
+            username: userProfile.user.username,
+            photoURL: foundProfilePhoto ? foundProfilePhoto.photoURL : null,
+        };
+
+        // Include user profile, user information, friends' user profiles, and posts in the response
+        const responseObj = {
+            success: true,
+            userProfile: userProfileWithoutRepos,
+            friends: friendsUserProfiles.map(friend => ({
+                id: friend.id,
+                username: friend.user.username,
+                photoURL: friendsProfilePhotosMap[friend.id] || null,
+            })),
+            posts: userPostsList,
+            friendsPosts: friendsPosts,
+        };
+
+        // Send response
+        return res.status(200).json(responseObj);
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, error: 'Internal Server Error' });
@@ -1134,7 +1296,6 @@ app.post('/api/posts', async (req, res) => {
 
 
 
-
-
+// ----------------------------------------------------------
 
 server.listen(8080, () => console.log('connected...'));
