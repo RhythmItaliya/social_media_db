@@ -360,19 +360,36 @@ app.post('/userProfile/create/:uuid', async (req, res) => {
     }
 });
 
+//  FIND FATA FOR SETTINGS
 app.get('/userProfile/get/:uuid', async (req, res) => {
-    const { userProfiles } = require('./models');
+    const { userProfiles, users, profilePhotes } = require('./models');
 
     try {
         const userProfile = await userProfiles.findOne({
-            where: { uuid: req.params.uuid }
+            where: { uuid: req.params.uuid },
+            include: [
+                {
+                    model: users,
+                    attributes: ['username'],
+                },
+                {
+                    model: profilePhotes,
+                    attributes: ['photoURL'],
+                },
+            ],
         });
 
         if (!userProfile) {
             return res.status(404).send({ error: 'User profile not found' });
         }
 
+        // Construct the complete URL for the image
+        const baseImageUrl = 'http://static.profile.local/';
+        const completeImageUrl = userProfile.profilePhote ? baseImageUrl + userProfile.profilePhote.photoURL : null;
+
         const response = {
+            username: userProfile.user ? userProfile.user.username : null,
+            photoURL: completeImageUrl,
             firstName: userProfile.firstName,
             lastName: userProfile.lastName,
             gender: userProfile.gender,
@@ -387,7 +404,6 @@ app.get('/userProfile/get/:uuid', async (req, res) => {
         return res.status(500).send('Internal Server Error');
     }
 });
-
 
 
 
