@@ -45,6 +45,9 @@ module.exports = (sequelize, DataTypes) => {
 
       // posts
       userProfiles.hasMany(models.userPosts, { foreignKey: 'userProfileId', as: 'posts', });
+
+      //
+      userProfiles.hasMany(models.postComments, { foreignKey: 'userProfileId', as: 'postComments', });
     }
   }
 

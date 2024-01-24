@@ -405,6 +405,52 @@ app.get('/userProfile/get/:uuid', async (req, res) => {
     }
 });
 
+// UPDATE USER PROFILE
+app.put('/userProfile/update/:uuid', async (req, res) => {
+    const { userProfiles, users } = require('./models');
+
+    try {
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: req.params.uuid },
+            include: [
+                {
+                    model: users,
+                    attributes: ['username'],
+                },
+            ],
+        });
+
+        if (!userProfile) {
+            return res.status(404).send({ error: 'User profile not found' });
+        }
+
+        // Update user profile data based on request body
+        userProfile.firstName = req.body.firstName || userProfile.firstName;
+        userProfile.lastName = req.body.lastName || userProfile.lastName;
+        userProfile.gender = req.body.gender || userProfile.gender;
+        userProfile.birthdate = req.body.birthdate || userProfile.birthdate;
+        userProfile.location = req.body.location || userProfile.location;
+        userProfile.bio = req.body.bio || userProfile.bio;
+
+        // Save the updated user profile
+        await userProfile.save();
+
+        const response = {
+            username: userProfile.user ? userProfile.user.username : null,
+            firstName: userProfile.firstName,
+            lastName: userProfile.lastName,
+            gender: userProfile.gender,
+            birthdate: userProfile.birthdate,
+            location: userProfile.location,
+            bio: userProfile.bio,
+        };
+
+        res.status(200).send(response);
+    } catch (error) {
+        console.log(error);
+        return res.status(500).send('Internal Server Error');
+    }
+});
 
 
 // PROFILE GET ----------------------------------------------------------------------------------------------
@@ -1155,6 +1201,7 @@ app.post('/api/posts', async (req, res) => {
 // GET POST ----------------------------------------------------------------
 
 
+const { postComments } = require('./models');
 
 
 // app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
@@ -1313,5 +1360,50 @@ app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
 
 
 // ----------------------------------------------------------
+// POST_COMMENT 
+
+app.post('/api/post/comment', async (req, res) => {
+    try {
+        const { userProfileUUID, postId, commentText, commentReaction } = req.body;
+
+        // Find the userProfile based on UUID
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: userProfileUUID },
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+
+        // Use userProfile.id as userProfileId in the comment creation
+        const newComment = await postComments.create({
+            postId,
+            userProfileId: userProfile.id,
+            commentText,
+            commentReaction,
+        });
+
+        res.status(201).send(newComment);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+// ----------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 server.listen(8080, () => console.log('connected...'));

@@ -3,48 +3,38 @@ const {
   Model
 } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
-  class userPosts extends Model {
+  class postComments extends Model {
     /**
      * Helper method for defining associations.
      * This method is not a part of Sequelize lifecycle.
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
-      userPosts.belongsTo(models.userProfiles, { foreignKey: 'userProfileId', as: 'user', });
 
-      userPosts.belongsTo(models.userProfiles, { foreignKey: 'userProfileId', as: 'userComment', });
-      userPosts.hasMany(models.postComments, { foreignKey: 'postId', as: 'postComments', });
+      postComments.belongsTo(models.userProfiles, { foreignKey: 'userProfileId', as: 'userComment', });
+      postComments.belongsTo(models.userPosts, { foreignKey: 'postId', as: 'post', });
     }
   }
-  userPosts.init({
+  postComments.init({
+    postId: {
+      allowNull: false,
+      type: DataTypes.INTEGER
+    },
     userProfileId: {
       allowNull: false,
       type: DataTypes.INTEGER
     },
-    postText: {
+    commentText: {
+      allowNull: false,
       type: DataTypes.TEXT
     },
-    isPhoto: {
+    isDeleted: {
       allowNull: false,
       type: DataTypes.BOOLEAN,
       defaultValue: 0
     },
-    caption: {
-      type: DataTypes.TEXT
-    },
-    location: {
-      type: DataTypes.STRING
-    },
-    isVisibility: {
+    commentReaction: {
       allowNull: false,
-      type: DataTypes.BOOLEAN,
-      defaultValue: 0
-    },
-    postUploadURLs: {
-      allowNull: false,
-      type: DataTypes.STRING
-    },
-    hashtags: {
       type: DataTypes.STRING
     },
     uuid: {
@@ -54,7 +44,7 @@ module.exports = (sequelize, DataTypes) => {
     },
   }, {
     sequelize,
-    modelName: 'userPosts',
+    modelName: 'postComments',
   });
-  return userPosts;
+  return postComments;
 };
