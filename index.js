@@ -1201,7 +1201,6 @@ app.post('/api/posts', async (req, res) => {
 // GET POST ----------------------------------------------------------------
 
 
-const { postComments } = require('./models');
 
 
 // app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
@@ -1362,9 +1361,11 @@ app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
 // ----------------------------------------------------------
 // POST_COMMENT 
 
+const { postComments, commentLikes } = require('./models');
+
 app.post('/api/post/comment', async (req, res) => {
     try {
-        const { userProfileUUID, postId, commentText, commentReaction } = req.body;
+        const { userProfileUUID, postId, commentText, commentReaction, reactionCount } = req.body;
 
         // Find the userProfile based on UUID
         const userProfile = await userProfiles.findOne({
@@ -1381,6 +1382,7 @@ app.post('/api/post/comment', async (req, res) => {
             userProfileId: userProfile.id,
             commentText,
             commentReaction,
+            reactionCount
         });
 
         res.status(201).send(newComment);
@@ -1390,13 +1392,206 @@ app.post('/api/post/comment', async (req, res) => {
     }
 });
 
-// ----------------------------------------------------------
+
+
+// LIKE_COUNT AND LIKE_UNLIKE
+app.post('/api/post/comment/like', async (req, res) => {
+    try {
+        const { userProfileUUID, commentId } = req.body;
+
+        // Find the userProfile based on UUID
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: userProfileUUID },
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+
+        // Check if the comment exists
+        const comment = await postComments.findByPk(commentId);
+
+        if (!comment) {
+            return res.status(404).json({ error: 'Comment not found' });
+        }
+
+        // Check if the user has already liked the comment
+        const existingLike = await commentLikes.findOne({
+            where: {
+                userProfileId: userProfile.id,
+                commentId,
+            },
+        });
+
+        if (existingLike) {
+            // User has already liked the comment, so remove the like
+            await commentLikes.destroy({
+                where: {
+                    userProfileId: userProfile.id,
+                    commentId,
+                },
+            });
+
+            // Decrement the reactionCount in the postComments table
+            await postComments.decrement('reactionCount', {
+                where: { id: commentId },
+            });
+
+            return res.status(200).json({ message: 'Like removed successfully' });
+        }
+
+        // User has not liked the comment, so create a new like
+        const newLike = await commentLikes.create({
+            userProfileId: userProfile.id,
+            commentId,
+        });
+
+        // Increment the reactionCount in the postComments table
+        await postComments.increment('reactionCount', {
+            where: { id: commentId },
+        });
+
+        res.status(201).send(newLike);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
 
 
 
+// FIND_LIKE_USER_PROFILE
+app.get('/find/api/user/liked-comments/:userProfileUUID', async (req, res) => {
+    try {
+        const userProfileUUID = req.params.userProfileUUID;
+
+        // Find the user profile based on UUID
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: userProfileUUID },
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        const userProfileId = userProfile.id;
+
+        // Fetch liked comments for the user
+        const likedComments = await commentLikes.findAll({
+            where: { userProfileId: userProfileId },
+            include: [
+                {
+                    model: postComments,
+                    as: 'comment',
+                    attributes: ['id', 'commentText', 'commentReaction', 'reactionCount'],
+                    include: [
+                        {
+                            model: userProfiles,
+                            as: 'userComment',
+                            attributes: ['id'],
+                            include: [
+                                {
+                                    model: users,
+                                    attributes: ['username'],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const likedCommentsResponse = likedComments.map(commentLike => {
+            return {
+                id: commentLike.comment.id,
+                commentText: commentLike.comment.commentText,
+                commentReaction: commentLike.comment.commentReaction,
+                reactionCount: commentLike.comment.reactionCount,
+                user: {
+                    username: commentLike.comment.userComment?.user?.username || null,
+                },
+            };
+        });
+
+        return res.status(200).json({
+            success: true,
+            user: {
+                id: userProfile.id,
+                username: userProfile.username,
+            },
+            likedComments: likedCommentsResponse,
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+});
 
 
+// POST_COMMENT_GET
+app.get('/find/api/post/comments/:postId', async (req, res) => {
+    try {
+        // Find the post using the provided ID
+        const post = await userPosts.findOne({
+            where: { id: req.params.postId },
+        });
 
+        if (!post) {
+            return res.status(404).json({ success: false, error: 'Post not found' });
+        }
+
+        // Fetch comments for the post
+        const postComment = await postComments.findAll({
+            where: { postId: post.id },
+            include: [
+                {
+                    model: userProfiles,
+                    as: 'userComment',
+                    attributes: ['id'],
+                    include: [
+                        {
+                            model: users,
+                            attributes: ['username'],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const commentsResponse = await Promise.all(postComment.map(async comment => {
+            // Find the associated profile photo based on the user profile ID
+            const foundProfilePhoto = await profilePhotes.findOne({
+                where: { userProfileId: comment.userComment.id },
+                attributes: ['photoURL'],
+            });
+
+            return {
+                id: comment.id,
+                commentText: comment.commentText,
+                commentReaction: comment.commentReaction,
+                reactionCount: comment.reactionCount,
+                user: {
+                    username: comment.userComment?.user?.username || null,
+                    photoURL: foundProfilePhoto?.photoURL || null,
+                },
+            };
+        }));
+
+        // Send the response
+        return res.status(200).json({
+            success: true,
+            post: {
+                id: post.id,
+            },
+            comments: commentsResponse,
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+});
 
 
 

@@ -13,6 +13,9 @@ module.exports = (sequelize, DataTypes) => {
 
       postComments.belongsTo(models.userProfiles, { foreignKey: 'userProfileId', as: 'userComment', });
       postComments.belongsTo(models.userPosts, { foreignKey: 'postId', as: 'post', });
+
+      postComments.hasMany(models.commentLikes, { foreignKey: 'commentId', as: 'likes', });
+
     }
   }
   postComments.init({
@@ -36,6 +39,10 @@ module.exports = (sequelize, DataTypes) => {
     commentReaction: {
       allowNull: false,
       type: DataTypes.STRING
+    },
+    reactionCount: {
+      allowNull: false,
+      type: DataTypes.INTEGER,
     },
     uuid: {
       allowNull: false,
