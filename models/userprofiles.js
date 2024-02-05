@@ -18,26 +18,9 @@ module.exports = (sequelize, DataTypes) => {
       userProfiles.hasOne(models.profilePhotes, { foreignKey: 'userProfileId' });
 
       // friends
-      userProfiles.belongsToMany(models.userProfiles, {
-        through: 'friendships',
-        as: 'friends',
-        foreignKey: 'userProfile1Id',
-        otherKey: 'userProfile2Id',
-      });
-
-      userProfiles.belongsToMany(models.userProfiles, {
-        through: 'friendRequests',
-        as: 'sentFriendRequests',
-        foreignKey: 'senderId',
-        otherKey: 'receiverId',
-      });
-
-      userProfiles.belongsToMany(models.userProfiles, {
-        through: 'friendRequests',
-        as: 'receivedFriendRequests',
-        foreignKey: 'receiverId',
-        otherKey: 'senderId',
-      });
+      userProfiles.belongsToMany(models.userProfiles, { through: 'friendships', as: 'friends', foreignKey: 'userProfile1Id', otherKey: 'userProfile2Id' });
+      userProfiles.belongsToMany(models.userProfiles, { through: 'friendRequests', as: 'sentFriendRequests', foreignKey: 'senderId', otherKey: 'receiverId' });
+      userProfiles.belongsToMany(models.userProfiles, { through: 'friendRequests', as: 'receivedFriendRequests', foreignKey: 'receiverId', otherKey: 'senderId' });
 
       // sent messages
       userProfiles.hasMany(models.messages, { foreignKey: 'senderId', as: 'sentMessages' });
@@ -46,8 +29,16 @@ module.exports = (sequelize, DataTypes) => {
       // posts
       userProfiles.hasMany(models.userPosts, { foreignKey: 'userProfileId', as: 'posts', });
 
-      //
+      // comment
       userProfiles.hasMany(models.postComments, { foreignKey: 'userProfileId', as: 'postComments', });
+
+      // crushes
+      userProfiles.hasMany(models.crushes, { foreignKey: 'userProfile1Id', as: 'crushes1' });
+      userProfiles.hasMany(models.crushes, { foreignKey: 'userProfile2Id', as: 'crushes2' });
+
+      // ignores
+      userProfiles.hasMany(models.ignores, { foreignKey: 'userProfile1Id', as: 'ignores1' });
+      userProfiles.hasMany(models.ignores, { foreignKey: 'userProfile2Id', as: 'ignores2' });
     }
   }
 

@@ -3,7 +3,7 @@ const {
   Model
 } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
-  class friendRequests extends Model {
+  class ignores extends Model {
     /**
      * Helper method for defining associations.
      * This method is not a part of Sequelize lifecycle.
@@ -11,24 +11,19 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
 
-      friendRequests.belongsTo(models.userProfiles, { foreignKey: 'senderId', as: 'sender' });
-      friendRequests.belongsTo(models.userProfiles, { foreignKey: 'receiverId', as: 'receiver' });
+      ignores.belongsTo(models.userProfiles, { foreignKey: 'userProfile1Id', as: 'userProfile1' });
+      ignores.belongsTo(models.userProfiles, { foreignKey: 'userProfile2Id', as: 'userProfile2' });
 
     }
   }
-  friendRequests.init({
-    senderId: {
+  ignores.init({
+    userProfile1Id: {
       allowNull: false,
       type: DataTypes.INTEGER
     },
-    receiverId: {
+    userProfile2Id: {
       allowNull: false,
       type: DataTypes.INTEGER
-    },
-    status: {
-      allowNull: false,
-      type: DataTypes.ENUM('1', '2', '3'),
-      defaultValue: '1',
     },
     uuid: {
       allowNull: false,
@@ -37,7 +32,7 @@ module.exports = (sequelize, DataTypes) => {
     },
   }, {
     sequelize,
-    modelName: 'friendRequests',
+    modelName: 'ignores',
   });
-  return friendRequests;
+  return ignores;
 };

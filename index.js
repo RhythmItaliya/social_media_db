@@ -328,6 +328,40 @@ app.get('/users/:uuid', async (req, res) => {
     }
 });
 
+// username find //
+app.get('/:username', async (req, res) => {
+    const { users, userProfiles, profilePhotes } = require('./models');
+    try {
+        const { username } = req.params;
+
+        const user = await users.findOne({
+            where: {
+                username: username
+            },
+            include: [{
+                model: userProfiles,
+                attributes: ['uuid'],
+                include: [{
+                    model: profilePhotes,
+                    attributes: ['photoURL']
+                }]
+            }],
+            attributes: ['uuid', 'username']
+        });
+
+        if (user) {
+            res.send({ success: true, user });
+        } else {
+            res.send({ success: false, message: 'User not found' });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+
+
 // PROFILE CREATE ----------------------------------------------------------------------------------------------
 
 app.post('/userProfile/create/:uuid', async (req, res) => {
@@ -1001,8 +1035,68 @@ app.delete('/delete/friend/request/:uuid', async (req, res) => {
 // FIND FRIENDSHPIS
 
 app.get('/api/friendships/users/:profileUuid', async (req, res) => {
-    const { userProfiles, friendships } = require('./models');
+    try {
+        const profileUuid = req.params.profileUuid;
 
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: profileUuid },
+        });
+
+        if (!userProfile) {
+            return res.status(404).send({ error: 'User profile not found' });
+        }
+
+        const foundFriendships = await friendships.findAll({
+            where: {
+                [Op.or]: [
+                    { userProfile1Id: userProfile.id },
+                    { userProfile2Id: userProfile.id },
+                ],
+            },
+            include: [
+                {
+                    model: userProfiles,
+                    as: 'userProfile1',
+                    attributes: ['id', 'userId', 'firstName', 'lastName', 'uuid'],
+                },
+                {
+                    model: userProfiles,
+                    as: 'userProfile2',
+                    attributes: ['id', 'userId', 'firstName', 'lastName', 'uuid'],
+                },
+            ],
+        });
+
+        // Extract friend profiles from friendships
+        const friendProfiles = await Promise.all(foundFriendships.map(async (friendship) => {
+            if (friendship.userProfile1.id !== userProfile.id) {
+                const photoURLRecord = await profilePhotes.findOne({
+                    where: { userProfileId: friendship.userProfile1.id },
+                    attributes: ['photoURL'],
+                });
+                const photoURL = photoURLRecord?.photoURL;
+                const completeImageUrl = photoURL ? `http://static.profile.local/${photoURL}` : null;
+                return { ...friendship.userProfile1.toJSON(), photoURL: completeImageUrl };
+            } else {
+                const photoURLRecord = await profilePhotes.findOne({
+                    where: { userProfileId: friendship.userProfile2.id },
+                    attributes: ['photoURL'],
+                });
+                const photoURL = photoURLRecord?.photoURL;
+                const completeImageUrl = photoURL ? `http://static.profile.local/${photoURL}` : null;
+                return { ...friendship.userProfile2.toJSON(), photoURL: completeImageUrl };
+            }
+        }));
+
+        res.send({ friends: friendProfiles });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+// FRIENDSHIP COUNT //
+app.get('/api/friendships/count/:profileUuid', async (req, res) => {
     try {
         const profileUuid = req.params.profileUuid;
 
@@ -1012,45 +1106,29 @@ app.get('/api/friendships/users/:profileUuid', async (req, res) => {
         });
 
         if (!userProfile) {
-            return res.status(404).json({ error: 'User profile not found' });
+            return res.status(404).send({ error: 'User profile not found' });
         }
 
-        // Find all friendships where the user is either userProfile1 or userProfile2
-        const foundFriendships = await friendships.findAll({
+        // Count all friendships where the user is either userProfile1 or userProfile2
+        const friendshipCount = await friendships.count({
             where: {
                 [Op.or]: [
                     { userProfile1Id: userProfile.id },
                     { userProfile2Id: userProfile.id },
                 ],
             },
-            include: [
-                { model: userProfiles, as: 'userProfile1' },
-                { model: userProfiles, as: 'userProfile2' },
-            ],
         });
 
-        // Extract friend profiles from friendships
-        const friendProfiles = foundFriendships.map((friendship) => {
-            if (friendship.userProfile1.id !== userProfile.id) {
-                return friendship.userProfile1;
-            } else {
-                return friendship.userProfile2;
-            }
-        });
-
-        res.send({ friends: friendProfiles });
+        res.send({ friendshipCount });
     } catch (error) {
         console.error('Error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        res.status(500).send({ error: 'Internal Server Error' });
     }
 });
 
-//---------------------------------------------------------------------
-//CHAT
+//CHAT //---------------------------------------------------------------------
 
 const { messages } = require('./models');
-
-
 
 io.on('connection', (socket) => {
     const userId = socket.handshake.query.userId;
@@ -1108,44 +1186,84 @@ io.on('connection', (socket) => {
     });
 });
 
+// CHAT_GET // 
+app.get('/get-messages/:uuid', async (req, res) => {
+    try {
+        const uuid = req.params.uuid;
+
+        const user = await userProfiles.findOne({ where: { uuid } });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const userId = user.id;
+
+        // Retrieve messages where the user is the sender or receiver
+        const userMessages = await messages.findAll({
+            where: {
+                [Op.or]: [
+                    { senderId: userId },
+                    { receiverId: userId }
+                ]
+            },
+        });
+
+        res.json({ messages: userMessages });
+    } catch (error) {
+        console.error('Error retrieving messages:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// CHAT_LAST_MESSEGE_GET // 
+app.get('/get-last-message/:uuid', async (req, res) => {
+    try {
+        const uuid = req.params.uuid;
+
+        const user = await userProfiles.findOne({ where: { uuid } });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const userId = user.id;
+
+        const lastMessage = await messages.findOne({
+            where: {
+                [Op.or]: [
+                    { senderId: userId },
+                    { receiverId: userId }
+                ]
+            },
+            order: [['createdAt', 'DESC']],
+            limit: 1
+        });
+
+        if (!lastMessage) {
+            return res.status(404).send({ error: 'No messages found for the user' });
+        }
+
+        const lastMessageData = {
+            message: lastMessage.content,
+            timestamp: lastMessage.createdAt,
+            senderId: lastMessage.senderId,
+            receiverId: lastMessage.receiverId
+        };
+
+        res.send({ lastMessage: lastMessageData });
+    } catch (error) {
+        console.error('Error retrieving the last message:', error);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
 
 
 
-//---------------------------------------------------------------------
-// POST
+
+// POST  //--------------------------------------------------------------------- 
 
 const { userPosts, users } = require('./models');
 
-
-// UPLOADFILE ----------------------------------------------------------------------------------------------
-
-// app.post('/upload', (req, res) => {
-
-//     try {
-
-//         let originalFileName = req.body.name;
-//         let fileExtension = originalFileName.split('.').pop();
-
-//         let uuidN = uuid.v4();
-
-//         let newFileName = uuidN + '.' + fileExtension;
-
-//         let image = Buffer.from(req.body.data, 'base64');
-//         let filePath = __dirname + '/uploads/' + newFileName;
-//         fs.writeFileSync(filePath, image);
-
-//         let fileLink = '/uploads/' + newFileName;
-//         console.log(fileLink);
-
-//         res.send('ok');
-//     } catch (e) {
-//         console.error(e);
-//         return res.status(500).send('Lagata hai sever me error hai...');
-//     }
-// });
-
-// CREATE POST ------------------------------------------------------------------------------------
-
+// CREATE POST //
 app.post('/api/posts', async (req, res) => {
     try {
 
@@ -1197,63 +1315,7 @@ app.post('/api/posts', async (req, res) => {
     }
 });
 
-
-// GET POST ----------------------------------------------------------------
-
-
-
-
-// app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
-//     try {
-//         const userProfile = await userProfiles.findOne({
-//             where: { uuid: req.params.userProfileUuid },
-//             include: [
-//                 {
-//                     model: users,
-//                     attributes: ['username'],
-//                 },
-//             ],
-//         });
-
-//         if (!userProfile) {
-//             return res.status(404).json({ success: false, error: 'User profile not found' });
-//         }
-
-//         const userPostsList = await userPosts.findAll({
-//             where: { userProfileId: userProfile.id },
-//         });
-
-//             // Find the associated profile photo based on the user profile ID
-//             const foundProfilePhoto = await profilePhotes.findOne({
-//                 where: { userProfileId: userProfile.id },
-//                 attributes: ['photoURL'],
-//             });
-
-//             // Include user profile without the repositories information
-//             const userProfileWithoutRepos = {
-//                 id: userProfile.id,
-//                 username: userProfile.user.username,
-//                 photoURL: foundProfilePhoto ? foundProfilePhoto.photoURL : null,
-//             };
-
-//         // Include user profile, user information, and profile photos in the response
-//         const responseObj = {
-//             success: true,
-//             userProfile: userProfileWithoutRepos,
-//             posts: userPostsList,
-//         };
-
-//         return res.status(200).json(responseObj);
-//     } catch (error) {
-//         console.log(error);
-//         res.status(500).json({ success: false, error: 'Internal Server Error' });
-//     }
-// });
-
-
-
-
-
+// GET POST  //
 app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
     try {
         // Find the user profile
@@ -1355,14 +1417,67 @@ app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
     }
 });
 
+// POST_COUNT  //
+app.get('/api/userPostsCount/:profileUuid', async (req, res) => {
+    try {
+        const profileUuid = req.params.profileUuid;
+
+        // Find the user profile based on the UUID
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: profileUuid },
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ success: false, error: 'User profile not found' });
+        }
+
+        // Count the number of posts for the user
+        const postCount = await userPosts.count({
+            where: { userProfileId: userProfile.id },
+        });
+
+        return res.status(200).json({ success: true, postCount });
+    } catch (error) {
+        console.log(error);
+        res.status(500).send({ success: false, error: 'Internal Server Error' });
+    }
+});
 
 
+// POST_GET_FOR_PROFILE //
+app.get('/api/user/posts/profile/:uuid', async (req, res) => {
+    const { uuid } = req.params;
 
-// ----------------------------------------------------------
-// POST_COMMENT 
+    try {
+        const userProfile = await userProfiles.findOne({
+            where: {
+                uuid: uuid
+            }
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+
+        const posts = await userPosts.findAll({
+            where: {
+                userProfileId: userProfile.id
+            },
+            attributes: ['postUploadURLs']
+        });
+
+        res.json(posts);
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// POST_COMMENT // ----------------------------------------------------------
 
 const { postComments, commentLikes } = require('./models');
 
+// NEW_COMMET //
 app.post('/api/post/comment', async (req, res) => {
     try {
         const { userProfileUUID, postId, commentText, commentReaction, reactionCount } = req.body;
@@ -1373,7 +1488,7 @@ app.post('/api/post/comment', async (req, res) => {
         });
 
         if (!userProfile) {
-            return res.status(404).json({ error: 'User profile not found' });
+            return res.status(404).send({ error: 'User profile not found' });
         }
 
         // Use userProfile.id as userProfileId in the comment creation
@@ -1393,8 +1508,35 @@ app.post('/api/post/comment', async (req, res) => {
 });
 
 
+// DELETE_COMMET //
+app.delete('/api/delete/comment/:commentId', async (req, res) => {
+    try {
+        const commentId = req.params.commentId;
 
-// LIKE_COUNT AND LIKE_UNLIKE
+        // Check if the comment with the given commentId exists
+        const existingComment = await postComments.findByPk(commentId);
+
+        if (!existingComment) {
+            return res.status(404).send({ error: 'Comment not found' });
+        }
+
+        // Find and delete associated comment likes
+        await commentLikes.destroy({
+            where: { commentId: existingComment.id }
+        });
+
+        // Perform the deletion of the comment
+        await existingComment.destroy();
+
+        res.status(200).send({ message: 'Comment and associated likes deleted successfully' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+
+// LIKE_COUNT AND LIKE_UNLIKE //
 app.post('/api/post/comment/like', async (req, res) => {
     try {
         const { userProfileUUID, commentId } = req.body;
@@ -1405,14 +1547,14 @@ app.post('/api/post/comment/like', async (req, res) => {
         });
 
         if (!userProfile) {
-            return res.status(404).json({ error: 'User profile not found' });
+            return res.status(404).send({ error: 'User profile not found' });
         }
 
         // Check if the comment exists
         const comment = await postComments.findByPk(commentId);
 
         if (!comment) {
-            return res.status(404).json({ error: 'Comment not found' });
+            return res.status(404).send({ error: 'Comment not found' });
         }
 
         // Check if the user has already liked the comment
@@ -1437,7 +1579,7 @@ app.post('/api/post/comment/like', async (req, res) => {
                 where: { id: commentId },
             });
 
-            return res.status(200).json({ message: 'Like removed successfully' });
+            return res.status(200).send({ message: 'Like removed successfully' });
         }
 
         // User has not liked the comment, so create a new like
@@ -1459,8 +1601,7 @@ app.post('/api/post/comment/like', async (req, res) => {
 });
 
 
-
-// FIND_LIKE_USER_PROFILE
+// FIND_LIKE_USER_PROFILE //
 app.get('/find/api/user/liked-comments/:userProfileUUID', async (req, res) => {
     try {
         const userProfileUUID = req.params.userProfileUUID;
@@ -1471,7 +1612,7 @@ app.get('/find/api/user/liked-comments/:userProfileUUID', async (req, res) => {
         });
 
         if (!userProfile) {
-            return res.status(404).json({ success: false, error: 'User not found' });
+            return res.status(404).send({ success: false, error: 'User not found' });
         }
 
         const userProfileId = userProfile.id;
@@ -1513,7 +1654,7 @@ app.get('/find/api/user/liked-comments/:userProfileUUID', async (req, res) => {
             };
         });
 
-        return res.status(200).json({
+        return res.status(200).send({
             success: true,
             user: {
                 id: userProfile.id,
@@ -1524,12 +1665,12 @@ app.get('/find/api/user/liked-comments/:userProfileUUID', async (req, res) => {
 
     } catch (error) {
         console.error(error);
-        res.status(500).json({ success: false, error: 'Internal Server Error' });
+        res.status(500).send({ success: false, error: 'Internal Server Error' });
     }
 });
 
 
-// POST_COMMENT_GET
+// POST_COMMENT_GET //
 app.get('/find/api/post/comments/:postId', async (req, res) => {
     try {
         // Find the post using the provided ID
@@ -1579,7 +1720,7 @@ app.get('/find/api/post/comments/:postId', async (req, res) => {
         }));
 
         // Send the response
-        return res.status(200).json({
+        return res.status(200).send({
             success: true,
             post: {
                 id: post.id,
@@ -1589,16 +1730,102 @@ app.get('/find/api/post/comments/:postId', async (req, res) => {
 
     } catch (error) {
         console.error(error);
-        res.status(500).json({ success: false, error: 'Internal Server Error' });
+        res.status(500).send({ success: false, error: 'Internal Server Error' });
     }
 });
 
 
 
+// POST_COMMET_COUNT //
+app.get('/api/post/comments/count/:postID', async (req, res) => {
+    try {
+        // Find the post using the provided post ID
+        const post = await userPosts.findOne({
+            where: { id: req.params.postID },
+        });
+
+        if (!post) {
+            return res.status(404).send({ success: false, error: 'Post not found' });
+        }
+
+        // Count the number of comments for the post
+        const commentCount = await postComments.count({
+            where: { postId: post.id },
+        });
+
+        // Send the response with the comment count
+        return res.status(200).send({
+            success: true,
+            post: {
+                id: post.id,
+            },
+            commentCount: commentCount,
+        });
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).send({ success: false, error: 'Internal Server Error' });
+    }
+});
 
 
+// CRUSH_FRIEND //
+const { crushes, ignores } = require('./models');
 
+app.post('add/crushes', async (req, res) => {
+    try {
+        const { userProfile1Uuid, userProfile2Uuid } = req.body;
 
+        const userProfile1 = await userProfiles.findOne({
+            where: { uuid: userProfile1Uuid },
+        });
+        const userProfile2 = await userProfiles.findOne({
+            where: { uuid: userProfile2Uuid },
+        });
 
+        if (!userProfile1 || !userProfile2) {
+            return res.status(404).send({ error: 'User profile not found' });
+        }
+
+        const newCrush = await crushes.create({
+            userProfile1Id: userProfile1.id,
+            userProfile2Id: userProfile2.id,
+        });
+
+        return res.status(201).send(newCrush);
+    } catch (error) {
+        console.error(error);
+        return res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+// IGNORE_FRIEDND //
+app.post('add/ignores', async (req, res) => {
+    try {
+
+        const { userProfile1Uuid, userProfile2Uuid } = req.body;
+
+        const userProfile1 = await userProfiles.findOne({
+            where: { uuid: userProfile1Uuid },
+        });
+        const userProfile2 = await userProfiles.findOne({
+            where: { uuid: userProfile2Uuid },
+        });
+
+        if (!userProfile1 || !userProfile2) {
+            return res.status(404).send({ error: 'User profile not found' });
+        }
+
+        const newIgnore = await ignores.create({
+            userProfile1Id: userProfile1.id,
+            userProfile2Id: userProfile2.id,
+        });
+
+        return res.status(201).send(newIgnore);
+    } catch (error) {
+        console.error(error);
+        return res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
 
 server.listen(8080, () => console.log('connected...'));
