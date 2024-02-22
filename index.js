@@ -3,7 +3,7 @@ const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
-const { Op } = require('sequelize');
+const { Op, literal } = require('sequelize');
 const cors = require('cors');
 const uuid = require('uuid');
 const sendMail = require('./untils/mailer');
@@ -180,6 +180,23 @@ app.post('/login', async (req, res) => {
         });
     } else {
         return res.status(401).send({ 'error': 'username and password is incorrect....' });
+    }
+});
+
+
+// New logout endpoint
+app.post('/logout', (req, res) => {
+    try {
+        // Clear the 'X-Access-Token' cookie
+        res.clearCookie('X-Access-Token');
+
+        // In this example, we'll just log a message
+        console.log('Token invalidated on the server');
+
+        res.status(200).json({ message: 'Logout successful' });
+    } catch (error) {
+        console.error('Error during logout:', error);
+        res.status(500).json({ error: 'Internal Server Error.' });
     }
 });
 
@@ -363,6 +380,95 @@ app.get('/:username', async (req, res) => {
 
 
 // PROFILE CREATE ----------------------------------------------------------------------------------------------
+
+// FINE PROFILE REDICTRE
+app.get('/api/users/profileCreated/:uuid', async (req, res) => {
+    try {
+        const { uuid } = req.params;
+        const user = await users.findOne({ where: { uuid } });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        const profileCreated = user.profileCreated;
+
+        if (profileCreated === null || profileCreated === undefined || typeof profileCreated !== 'boolean') {
+            return res.status(500).json({ error: 'Invalid profileCreated value' });
+        }
+        res.json({ profileCreated });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// MAIN_PROFILE_CREATE
+app.post('/api/profilepage/create/:uuid', async (req, res) => {
+
+    const path = require('path');
+    const fs = require('fs').promises;
+
+    try {
+        const { firstName, lastName, gender, birthdate, location, bio, data } = req.body;
+
+        if (!firstName || !lastName || !gender || !birthdate || !location || !bio) {
+            return res.status(400).json({ success: false, error: 'Missing required fields' });
+        }
+
+        const user = await users.findOne({
+            where: { uuid: req.params.uuid }
+        });
+
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        const existingProfile = await userProfiles.findOne({
+            where: { userId: user.id }
+        });
+
+        if (existingProfile) {
+            return res.status(409).json({ success: false, error: 'Profile already exists.' });
+        }
+
+        const userProfileData = await userProfiles.create({
+            userId: user.id,
+            firstName,
+            lastName,
+            gender,
+            birthdate,
+            location,
+            bio,
+        });
+
+        if (data) {
+            if (typeof data !== 'string' || data.trim() === '') {
+                return res.status(400).json({ success: false, error: 'Invalid or missing image data' });
+            }
+
+            const matches = data.match(/^data:image\/([a-zA-Z0-9]+);base64,/);
+            const fileExtension = matches ? matches[1] : 'png';
+            const uuidN = uuid.v4();
+            const newFileName = `${uuidN}.${fileExtension}`;
+            const image = Buffer.from(data.replace(/^data:image\/[a-zA-Z0-9]+;base64,/, ''), 'base64');
+            const filePath = path.join(__dirname, '/Profilephotoes', newFileName);
+
+            await Promise.all([
+                await fs.writeFile(filePath, image),
+                profilePhotes.create({
+                    userProfileId: userProfileData.id,
+                    photoURL: newFileName,
+                }),
+                user.update({ profileCreated: true }),
+            ]);
+        }
+
+        res.status(201).json({ success: true, message: 'User profile created successfully', userProfileData });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: 'An error occurred on the server.' });
+    }
+});
+
 
 app.post('/userProfile/create/:uuid', async (req, res) => {
     const { users, userProfiles } = require('./models');
@@ -1058,34 +1164,36 @@ app.get('/api/friendships/users/:profileUuid', async (req, res) => {
                     model: userProfiles,
                     as: 'userProfile1',
                     attributes: ['id', 'userId', 'firstName', 'lastName', 'uuid'],
+                    include: [{ model: users, attributes: ['username'] }],
                 },
                 {
                     model: userProfiles,
                     as: 'userProfile2',
                     attributes: ['id', 'userId', 'firstName', 'lastName', 'uuid'],
+                    include: [{ model: users, attributes: ['username'] }],
                 },
             ],
         });
 
-        // Extract friend profiles from friendships
         const friendProfiles = await Promise.all(foundFriendships.map(async (friendship) => {
-            if (friendship.userProfile1.id !== userProfile.id) {
-                const photoURLRecord = await profilePhotes.findOne({
-                    where: { userProfileId: friendship.userProfile1.id },
-                    attributes: ['photoURL'],
-                });
-                const photoURL = photoURLRecord?.photoURL;
-                const completeImageUrl = photoURL ? `http://static.profile.local/${photoURL}` : null;
-                return { ...friendship.userProfile1.toJSON(), photoURL: completeImageUrl };
-            } else {
-                const photoURLRecord = await profilePhotes.findOne({
-                    where: { userProfileId: friendship.userProfile2.id },
-                    attributes: ['photoURL'],
-                });
-                const photoURL = photoURLRecord?.photoURL;
-                const completeImageUrl = photoURL ? `http://static.profile.local/${photoURL}` : null;
-                return { ...friendship.userProfile2.toJSON(), photoURL: completeImageUrl };
-            }
+            // Assuming userProfile1 and userProfile2 also have a user association
+            const friendUserProfile = friendship.userProfile1.id !== userProfile.id
+                ? friendship.userProfile1
+                : friendship.userProfile2;
+
+            const photoURLRecord = await profilePhotes.findOne({
+                where: { userProfileId: friendUserProfile.id },
+                attributes: ['photoURL'],
+            });
+
+            const photoURL = photoURLRecord?.photoURL;
+            const completeImageUrl = photoURL ? `http://static.profile.local/${photoURL}` : null;
+
+            return {
+                ...friendUserProfile.toJSON(),
+                photoURL: completeImageUrl,
+                username: friendUserProfile.user.username,
+            };
         }));
 
         res.send({ friends: friendProfiles });
@@ -1186,7 +1294,7 @@ io.on('connection', (socket) => {
     });
 });
 
-// CHAT_GET // 
+// CHAT_GET //
 app.get('/get-messages/:uuid', async (req, res) => {
     try {
         const uuid = req.params.uuid;
@@ -1198,7 +1306,6 @@ app.get('/get-messages/:uuid', async (req, res) => {
 
         const userId = user.id;
 
-        // Retrieve messages where the user is the sender or receiver
         const userMessages = await messages.findAll({
             where: {
                 [Op.or]: [
@@ -1206,14 +1313,29 @@ app.get('/get-messages/:uuid', async (req, res) => {
                     { receiverId: userId }
                 ]
             },
+            include: [
+                { model: userProfiles, as: 'sender', attributes: ['uuid'] },
+                { model: userProfiles, as: 'receiver', attributes: ['uuid'] }
+            ]
         });
 
-        res.json({ messages: userMessages });
+        const formattedMessages = userMessages.map(message => {
+            return {
+                id: message.id,
+                content: message.content,
+                sender: message.sender ? message.sender.uuid : null,
+                receiver: message.receiver ? message.receiver.uuid : null,
+                createdAt: message.createdAt,
+            };
+        });
+
+        res.send({ messages: formattedMessages });
     } catch (error) {
         console.error('Error retrieving messages:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        res.status(500).send({ error: 'Internal Server Error' });
     }
 });
+
 
 // CHAT_LAST_MESSEGE_GET // 
 app.get('/get-last-message/:uuid', async (req, res) => {
@@ -1827,5 +1949,64 @@ app.post('add/ignores', async (req, res) => {
         return res.status(500).send({ error: 'Internal Server Error' });
     }
 });
+
+
+// -----------------------------------------------------------------------------------------------
+
+// SEARCH_PROFILE
+app.get('/search/:searchTerm', async (req, res) => {
+    const { users, userProfiles, profilePhotes } = require('./models');
+    try {
+        const { searchTerm } = req.params;
+
+        const usersList = await users.findAll({
+            where: {
+                [Op.and]: [
+                    {
+                        [Op.or]: [
+                            { username: { [Op.like]: `%${searchTerm}%` } },
+                            { '$userProfile.firstName$': { [Op.like]: `%${searchTerm}%` } },
+                            { '$userProfile.lastName$': { [Op.like]: `%${searchTerm}%` } }
+                        ]
+                    },
+                    { isActive: 1 }
+                ]
+            },
+            include: [{
+                model: userProfiles,
+                as: 'userProfile',
+                attributes: ['uuid', 'firstName', 'lastName'],
+                include: [{
+                    model: profilePhotes,
+                    attributes: ['photoURL']
+                }]
+            }],
+            attributes: ['uuid', 'username'],
+            order: literal(
+                "CASE " +
+                "WHEN username LIKE :searchTerm THEN 1 " +
+                "WHEN '$userProfile.firstName$' LIKE :searchTerm THEN 2 " +
+                "WHEN '$userProfile.lastName$' LIKE :searchTerm THEN 3 " +
+                "ELSE 4 " +
+                "END"
+            ),
+            replacements: { searchTerm: `%${searchTerm}%` }
+        });
+
+        if (usersList.length > 0) {
+            res.send({ success: true, users: usersList });
+        } else {
+            res.send({ success: false, message: 'No matching users found' });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+
+
+
+
 
 server.listen(8080, () => console.log('connected...'));

@@ -37,6 +37,11 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       defaultValue: 0
     },
+    profileCreated: {
+      allowNull: false,
+      type: DataTypes.BOOLEAN,
+      defaultValue: 0,
+    },
     token: {
       allowNull: false,
       type: DataTypes.UUID
