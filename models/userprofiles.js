@@ -71,7 +71,11 @@ module.exports = (sequelize, DataTypes) => {
       // allowNull: false,
       type: DataTypes.TEXT
     },
-
+    darkMode: {
+      allowNull: false,
+      type: DataTypes.BOOLEAN,
+      defaultValue: false 
+    },
     token: {
       allowNull: false,
       type: DataTypes.UUID,

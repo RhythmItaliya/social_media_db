@@ -184,13 +184,10 @@ app.post('/login', async (req, res) => {
 });
 
 
-// New logout endpoint
 app.post('/logout', (req, res) => {
     try {
-        // Clear the 'X-Access-Token' cookie
         res.clearCookie('X-Access-Token');
 
-        // In this example, we'll just log a message
         console.log('Token invalidated on the server');
 
         res.status(200).json({ message: 'Logout successful' });
@@ -458,16 +455,90 @@ app.post('/api/profilepage/create/:uuid', async (req, res) => {
                     userProfileId: userProfileData.id,
                     photoURL: newFileName,
                 }),
-                user.update({ profileCreated: true }),
+                // user.update({ profileCreated: true }),
             ]);
         }
 
+        user.update({ profileCreated: true });
         res.status(201).json({ success: true, message: 'User profile created successfully', userProfileData });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, error: 'An error occurred on the server.' });
     }
 });
+
+
+// DARK MODE
+app.get('/api/user/profiles/:uuid/mode', async (req, res) => {
+    const { users, userProfiles } = require('./models');
+
+    console.log('Received UUID:', req.params.uuid);
+
+    try {
+        const user = await users.findOne({
+            where: { uuid: req.params.uuid }
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const userProfile = await userProfiles.findOne({
+            where: { userId: user.id }
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+
+        const isDarkMode = userProfile.darkMode === 1;
+
+        res.status(200).send({ darkMode: isDarkMode });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).send('There was a server error...');
+    }
+});
+
+
+app.put('/api/user/profiles/:uuid/mode', async (req, res) => {
+    const { users, userProfiles } = require('./models');
+
+    try {
+        const user = await users.findOne({
+            where: { uuid: req.params.uuid }
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const userProfile = await userProfiles.findOne({
+            where: { userId: user.id }
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+
+        const updatedDarkModeValue = req.body.darkMode ? 1 : 0;
+
+        await userProfile.update({ darkMode: updatedDarkModeValue });
+
+        await userProfile.save();
+
+        res.status(200).send({
+            message: 'Dark mode updated successfully',
+            darkModeValue: updatedDarkModeValue,
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).send('There was a server error...');
+    }
+});
+
+
+
 
 
 app.post('/userProfile/create/:uuid', async (req, res) => {
@@ -595,6 +666,7 @@ app.put('/userProfile/update/:uuid', async (req, res) => {
 
 // PROFILE GET ----------------------------------------------------------------------------------------------
 
+// SUGGESTED_FRIEND
 app.get('/api/userProfiles/:uuid', async (req, res) => {
     const { userProfiles, profilePhotes, users } = require('./models');
     const { uuid } = req.params;
@@ -627,6 +699,8 @@ app.get('/api/userProfiles/:uuid', async (req, res) => {
                 uuid: profile.uuid,
                 username: profile.user ? profile.user.username : null,
                 photoURL: profile.profilePhote ? profile.profilePhote.photoURL : null,
+                firstName: profile.firstName,
+                lastName: profile.lastName,
             };
         });
         res.send({ userProfiles: response });
@@ -635,6 +709,65 @@ app.get('/api/userProfiles/:uuid', async (req, res) => {
         res.status(500).send({ e: 'Internal Server Error' });
     }
 });
+
+// FIND_SENDER_AND_RICVER_FRIENDREUSRT
+app.get('/api/friendrequests/find/:uuid', async (req, res) => {
+    try {
+        const userUuid = req.params.uuid;
+
+        if (!userUuid) {
+            return res.status(400).json({ error: 'Missing userUuid in the URL parameters' });
+        }
+
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: userUuid },
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const friendRequestsList = await friendRequests.findAll({
+            where: {
+                [Op.or]: [
+                    { senderId: userProfile.id },
+                    { receiverId: userProfile.id },
+                ],
+                status: '1',
+            },
+            include: [
+                { model: userProfiles, as: 'sender' },
+                { model: userProfiles, as: 'receiver' },
+            ],
+        });
+
+        const formattedFriendRequests = friendRequestsList.map(request => {
+            const sender = {
+                id: request.sender.id,
+                firstName: request.sender.firstName,
+                uuid: request.sender.uuid,
+            };
+            const receiver = {
+                id: request.receiver.id,
+                firstName: request.sender.firstName,
+                uuid: request.receiver.uuid,
+            };
+            return {
+                id: request.id,
+                sender,
+                receiver,
+                status: request.status,
+                uuid: request.uuid,
+            };
+        });
+
+        res.json(formattedFriendRequests);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
 
 // PROFILE PHOTOS ----------------------------------------------------------------------------------------------
 
@@ -952,7 +1085,7 @@ app.post('/friendRequests', async (req, res) => {
     }
 });
 
-
+// FRIENDREQUESTS GET
 app.get('/friendRequests/:receiverUUID', async (req, res) => {
     const receiverUUID = req.params.receiverUUID;
 
@@ -995,8 +1128,24 @@ app.get('/friendRequests/:receiverUUID', async (req, res) => {
                         data += chunk;
                     });
 
-                    api2Response.on('end', () => {
-                        resolve(JSON.parse(data));
+                    api2Response.on('end', async () => {
+                        try {
+                            const parsedData = JSON.parse(data);
+
+                            const userProfile = await userProfiles.findOne({
+                                include: [{ model: users, attributes: ['username'] }],
+                            });
+
+                            if (userProfile) {
+                                const { username } = userProfile.user;
+                                resolve({ parsedData, username });
+                            } else {
+                                reject({ status: 404, message: 'User not found' });
+                            }
+                        } catch (error) {
+                            console.error(`Error fetching sender profile for UUID ${senderUUID}: ${error.message}`);
+                            reject(error);
+                        }
                     });
                 }).on('error', (error) => {
                     console.error(`Error fetching sender profile for UUID ${senderUUID}: ${error.message}`);
@@ -1009,6 +1158,7 @@ app.get('/friendRequests/:receiverUUID', async (req, res) => {
 
         const combinedResponses = friendRequestsList.map((request, index) => {
             const senderProfile = senderProfiles[index] || {};
+            const { parsedData, username } = senderProfile;
 
             return {
                 friendRequest: {
@@ -1021,18 +1171,21 @@ app.get('/friendRequests/:receiverUUID', async (req, res) => {
                     },
                 },
                 senderProfile: {
-                    firstName: senderProfile.firstName,
-                    lastName: senderProfile.lastName,
-                    completeImageUrl: senderProfile.completeImageUrl,
+                    firstName: parsedData.firstName,
+                    lastName: parsedData.lastName,
+                    completeImageUrl: parsedData.completeImageUrl,
+                    username: username,
                 },
             };
         });
 
+        // Send the complete response to the client
         return res.send(combinedResponses);
     } catch (error) {
         res.status(400).send({ error: error.message });
     }
 });
+
 
 
 app.get('/api/user/profile/receiver/:uuid', async (req, res) => {
@@ -1594,6 +1747,49 @@ app.get('/api/user/posts/profile/:uuid', async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
+// POST_GET_FOR_PROFILE_PUBLIC //
+app.get('/api/user/posts/profile/public/:uuid', async (req, res) => {
+    const { uuid } = req.params;
+
+    try {
+        const userProfile = await userProfiles.findOne({
+            where: {
+                uuid: uuid
+            }
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+
+        const isFriend = await friendships.findOne({
+            where: {
+                [Op.or]: [
+                    { userProfile1Id: userProfile.id },
+                    { userProfile2Id: userProfile.id }
+                ],
+            }
+        });
+
+        if (!isFriend) {
+            return res.status(403).json({ error: 'Access denied. Users are not friends.' });
+        }
+
+        const posts = await userPosts.findAll({
+            where: {
+                userProfileId: userProfile.id
+            },
+            attributes: ['postUploadURLs']
+        });
+
+        res.json(posts);
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 
 // POST_COMMENT // ----------------------------------------------------------
 
