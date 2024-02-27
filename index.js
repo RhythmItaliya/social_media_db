@@ -329,18 +329,26 @@ app.get('/users/:uuid', async (req, res) => {
 
         const userData = await users.findOne({
             where: { uuid },
-            include: [{ model: userProfiles }]
+            include: [{ model: userProfiles, attributes: ['id', 'userId', 'firstName', 'lastName', 'gender', 'birthdate', 'location', 'bio', 'uuid'] }]
         });
+
         if (!userData) {
             return res.status(404).send({ error: 'User not found' });
         }
-        res.send(userData);
+
+        const { id, username, userProfile } = userData;
+
+        res.send({
+            id,
+            username,
+            userProfile
+        });
     } catch (error) {
         console.log(error);
-        return res.status(500).send('Lagata hai sever me error hai...');
-
+        return res.status(500).send('Server mein error hai...');
     }
 });
+
 
 // username find //
 app.get('/:username', async (req, res) => {
@@ -1682,7 +1690,7 @@ app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
             })),
             posts: userPostsList,
             friendsPosts: friendsPosts,
-        };
+        };  
 
         // Send response
         return res.status(200).json(responseObj);
@@ -1793,7 +1801,7 @@ app.get('/api/user/posts/profile/public/:uuid', async (req, res) => {
 
 // POST_COMMENT // ----------------------------------------------------------
 
-const { postComments, commentLikes } = require('./models');
+const { postComments, commentLikes, postLikes } = require('./models');
 
 // NEW_COMMET //
 app.post('/api/post/comment', async (req, res) => {
@@ -2085,6 +2093,46 @@ app.get('/api/post/comments/count/:postID', async (req, res) => {
         res.status(500).send({ success: false, error: 'Internal Server Error' });
     }
 });
+
+// POST_LIKE //
+app.post('/post/like', async (req, res) => {
+    try {
+        const { userProfileId, postId } = req.body;
+
+        const user = await userProfiles.findOne({
+            where: {
+                uuid: userProfileId,
+            },
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const existingLike = await postLikes.findOne({
+            where: {
+                userProfileId: user.id,
+                postId,
+            },
+        });
+
+        if (existingLike) {
+            await existingLike.destroy();
+            res.status(200).json({ message: 'Post unliked successfully.' });
+        } else {
+            await postLikes.create({
+                userProfileId: user.id,
+                postId,
+            });
+
+            res.status(200).json({ message: 'Post liked successfully.' });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 
 
 // CRUSH_FRIEND //
