@@ -1598,7 +1598,7 @@ app.post('/api/posts', async (req, res) => {
     }
 });
 
-// GET POST  //
+// GET POST BY PROFILE_UUID // FRIEND POST //
 app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
     try {
         // Find the user profile
@@ -1646,7 +1646,7 @@ app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
 
         // Fetch posts of the user's friends
         const friendsPosts = await userPosts.findAll({
-            where: { userProfileId: friendUserProfileIds },
+            where: { userProfileId: friendUserProfileIds, isVisibility: 0 },
         });
 
         // Find the associated profile photos for friends
@@ -1690,10 +1690,123 @@ app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
             })),
             posts: userPostsList,
             friendsPosts: friendsPosts,
-        };  
+        };
 
         // Send response
         return res.status(200).json(responseObj);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+});
+
+// GET POST BY ID
+app.get('/api/posts/get/:postId', async (req, res) => {
+    try {
+        const postId = req.params.postId;
+
+        if (!postId) {
+            return res.status(400).json({ success: false, error: 'Invalid postId format' });
+        }
+
+        const post = await userPosts.findOne({
+            where: { id: postId },
+        });
+
+        if (!post) {
+            return res.status(404).json({ success: false, error: 'Post not found' });
+        }
+
+        return res.status(200).json({ success: true, post });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+});
+
+// UPDATE POST BY ID //
+app.put('/api/posts/update/:postId', async (req, res) => {
+    try {
+        const postId = req.params.postId;
+
+        // Validate postId
+        if (!postId) {
+            return res.status(400).json({ success: false, error: 'Invalid postId' });
+        }
+
+        // Your existing logic to update a post
+        const existingPost = await userPosts.findByPk(postId);
+
+        if (!existingPost) {
+            return res.status(404).json({ success: false, error: 'Post not found' });
+        }
+
+        // Update the post properties based on your requirements
+        existingPost.postText = req.body.postText !== null && req.body.postText !== "" ? req.body.postText : existingPost.postText;
+        existingPost.caption = req.body.caption !== null && req.body.caption !== "" ? req.body.caption : existingPost.caption;
+        existingPost.location = req.body.location !== null && req.body.location !== "" ? req.body.location : existingPost.location;
+        existingPost.hashtags = req.body.hashtags !== null && req.body.hashtags !== "" ? req.body.hashtags : existingPost.hashtags;
+
+        // Save the updated post
+        await existingPost.save();
+
+        return res.status(200).json({ success: true, post: existingPost });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+});
+
+// UPDATE POST VISIBILITY //
+app.put('/api/posts/visibility/:postId', async (req, res) => {
+    try {
+        const postId = req.params.postId;
+        const { isVisibility } = req.body;
+
+        // Validate isVisibility
+        const validatedIsVisibility = (isVisibility === '0' || isVisibility === '1') ? isVisibility : '0';
+
+        // Update the post visibility
+        const updatedPost = await userPosts.update(
+            { isVisibility: validatedIsVisibility },
+            { where: { id: postId } }
+        );
+
+        if (updatedPost[0] === 0) {
+            return res.status(404).json({ success: false, error: 'Post not found' });
+        }
+
+        return res.status(200).json({ success: true, message: 'Post visibility updated successfully' });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+});
+
+
+
+// DELETE POST //
+app.delete('/api/posts/delete/:postId', async (req, res) => {
+    try {
+        const postId = req.params.postId;
+
+        if (!postId || isNaN(postId)) {
+            return res.status(400).json({ success: false, error: 'Invalid postId' });
+        }
+
+        const postToDelete = await userPosts.findByPk(postId);
+
+        if (!postToDelete) {
+            return res.status(404).json({ success: false, error: 'Post not found' });
+        }
+
+        const fileLink = postToDelete.postUploadURLs;
+        const filePath = __dirname + '/uploads/' + fileLink;
+        fs.unlinkSync(filePath);
+
+        await postToDelete.destroy();
+
+        return res.status(200).json({ success: true, message: 'Post deleted successfully' });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, error: 'Internal Server Error' });
@@ -1725,7 +1838,6 @@ app.get('/api/userPostsCount/:profileUuid', async (req, res) => {
         res.status(500).send({ success: false, error: 'Internal Server Error' });
     }
 });
-
 
 // POST_GET_FOR_PROFILE //
 app.get('/api/user/posts/profile/:uuid', async (req, res) => {
@@ -2059,7 +2171,6 @@ app.get('/find/api/post/comments/:postId', async (req, res) => {
         res.status(500).send({ success: false, error: 'Internal Server Error' });
     }
 });
-
 
 
 // POST_COMMET_COUNT //
