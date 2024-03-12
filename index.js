@@ -382,6 +382,30 @@ app.get('/:username', async (req, res) => {
     }
 });
 
+// app.get('/check/:username', async (req, res) => {
+//     try {
+//         const { username } = req.params;
+
+//         if (!username) {
+//             return res.send({ success: false });
+//         }
+
+//         // Find user by username
+//         const user = await users.findOne({
+//             where: { username },
+//         });
+
+//         if (user) {
+//             return res.send({ success: true });
+//         } else {
+//             return res.send({ success: false });
+//         }
+//     } catch (error) {
+//         console.error('Error in /check/:username:', error);
+//         return res.status(500).send({ success: false, error: 'Internal Server Error', message: error.message });
+//     }
+// });
+
 
 
 // PROFILE CREATE ----------------------------------------------------------------------------------------------
@@ -1008,23 +1032,9 @@ app.delete('/profilephotoes/delete/:uuid', async (req, res) => {
 
 const { userProfiles, friendships, friendRequests, profilePhotes } = require('./models');
 
-// Endpoint to get a user's friends
-app.get('/userProfiles/:profileId/friends', async (req, res) => {
-    const profileId = req.params.uuid;
-    const user = await userProfiles.findOne(profileId, {
-        include: [
-            {
-                model: userProfiles,
-                as: 'friends',
-                through: 'friendships',
-            },
-        ],
-    });
-    res.send(user.friends);
-});
 
-// Endpoint to send a friend request
-app.post('/friendRequests', async (req, res) => {
+// PUBLIC_PROFILE_SEND_REQUEST //
+app.post('/public/friendRequests', async (req, res) => {
     const senderUUID = req.body.senderId;
     const receiverUUID = req.body.receiverId;
 
@@ -1033,26 +1043,30 @@ app.post('/friendRequests', async (req, res) => {
     }
 
     try {
-        const senderProfile = await userProfiles.findOne({ where: { uuid: senderUUID } });
+        const senderUserInstance = await users.findOne({
+            where: { uuid: senderUUID },
+            include: userProfiles,
+        });
+
+        if (!senderUserInstance) {
+            return res.status(400).send({ error: 'Sender profile not found' });
+        }
+
+        const senderUserProfileUuid = senderUserInstance.userProfile.uuid;
+
+        if (senderUserProfileUuid === receiverUUID) {
+            return res.status(422).send({ error: 'Unprocessable Entity: Cannot send your own profile to a crush' });
+        }
+
+        const senderProfile = await userProfiles.findOne({ where: { uuid: senderUserProfileUuid } });
         const receiverProfile = await userProfiles.findOne({ where: { uuid: receiverUUID } });
+
 
         if (!senderProfile || !receiverProfile) {
             return res.status(400).send({ error: 'Sender or receiver profile not found' });
         }
 
-        // Check if the receiver has sent a friend request to the sender
-        const reverseRequest = await friendRequests.findOne({
-            where: {
-                senderId: receiverProfile.id,
-                receiverId: senderProfile.id,
-            },
-        });
-
-        if (reverseRequest && reverseRequest.status === '1') {
-            return res.status(400).send({ error: 'Friend request already received from the user. Cannot send a request until it is accepted or rejected.' });
-        }
-
-        // Check if there is an existing friend request from sender to receiver
+        // Check if there is an existing friend request
         const existingRequest = await friendRequests.findOne({
             where: {
                 senderId: senderProfile.id,
@@ -1061,37 +1075,72 @@ app.post('/friendRequests', async (req, res) => {
         });
 
         if (existingRequest) {
-            if (existingRequest.status === '1') {
-                return res.status(400).send({ error: 'Friend request already sent' });
-            } else if (existingRequest.status === '2') {
-                return res.status(400).send({ error: 'Friend request already accepted. Cannot send another request.' });
+            // If the request already exists, update it
+            const newStatus = existingRequest.status === '1' ? '3' : '1';
+
+            const updatedFriendRequest = await friendRequests.update(
+                { status: newStatus },
+                {
+                    where: {
+                        senderId: senderProfile.id,
+                        receiverId: receiverProfile.id,
+                    },
+                }
+            );
+
+            if (updatedFriendRequest > 0) {
+                return res.send({ success: true, message: 'Friend request updated successfully' });
+            } else {
+                return res.status(404).send({ success: false, error: 'Friend request not found' });
             }
+        } else {
+            // If the request doesn't exist, create a new one
+            const friendRequest = await friendRequests.create({
+                senderId: senderProfile.id,
+                receiverId: receiverProfile.id,
+                status: '1',
+            });
+
+            return res.send(friendRequest);
         }
-
-        // Check if there is an existing friend request from receiver to sender with status '2'
-        const reverseExistingRequest = await friendRequests.findOne({
-            where: {
-                senderId: receiverProfile.id,
-                receiverId: senderProfile.id,
-                status: '2',
-            },
-        });
-
-        if (reverseExistingRequest) {
-            return res.status(400).send({ error: 'Friend request has already been accepted. Cannot send another request.' });
-        }
-
-        const friendRequest = await friendRequests.create({
-            senderId: senderProfile.id,
-            receiverId: receiverProfile.id,
-            status: '1',
-        });
-
-        res.send(friendRequest);
     } catch (error) {
         res.status(400).send({ error: error.message });
     }
 });
+
+app.get('/get/public/friendRequests/:uuid', async (req, res) => {
+    try {
+        const userProfileUuid = req.params.uuid;
+
+        const friendRequest = await friendRequests.findOne({
+            where: {
+                [Op.or]: [
+                    { '$sender.uuid$': { [Op.eq]: userProfileUuid } },
+                    { '$receiver.uuid$': { [Op.eq]: userProfileUuid } },
+                ],
+            },
+            include: [
+                { model: userProfiles, as: 'sender', attributes: ['id', 'uuid'] },
+                { model: userProfiles, as: 'receiver', attributes: ['id', 'uuid'] },
+            ],
+        });
+
+        if (!friendRequest) {
+            return res.status(202).json({ success: false });
+        }
+
+        const status = friendRequest.status;
+        res.json({ success: true, status });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal Server Error' });
+    }
+});
+
+
+
+
+// -----------------------------
 
 // FRIENDREQUESTS GET
 app.get('/friendRequests/:receiverUUID', async (req, res) => {
@@ -1194,7 +1243,90 @@ app.get('/friendRequests/:receiverUUID', async (req, res) => {
     }
 });
 
+// USER FRIEND FIND //
+app.get('/userProfiles/:profileId/friends', async (req, res) => {
+    const profileId = req.params.uuid;
+    const user = await userProfiles.findOne(profileId, {
+        include: [
+            {
+                model: userProfiles,
+                as: 'friends',
+                through: 'friendships',
+            },
+        ],
+    });
+    res.send(user.friends);
+});
 
+// FRIEND_REQUEST_SEND //
+app.post('/friendRequests', async (req, res) => {
+    const senderUUID = req.body.senderId;
+    const receiverUUID = req.body.receiverId;
+
+    if (!senderUUID || !receiverUUID) {
+        return res.status(400).send({ error: 'SenderUUID and ReceiverUUID are required' });
+    }
+
+    try {
+        const senderProfile = await userProfiles.findOne({ where: { uuid: senderUUID } });
+        const receiverProfile = await userProfiles.findOne({ where: { uuid: receiverUUID } });
+
+        if (!senderProfile || !receiverProfile) {
+            return res.status(400).send({ error: 'Sender or receiver profile not found' });
+        }
+
+        // Check if the receiver has sent a friend request to the sender
+        const reverseRequest = await friendRequests.findOne({
+            where: {
+                senderId: receiverProfile.id,
+                receiverId: senderProfile.id,
+            },
+        });
+
+        if (reverseRequest && reverseRequest.status === '1') {
+            return res.status(400).send({ error: 'Friend request already received from the user. Cannot send a request until it is accepted or rejected.' });
+        }
+
+        // Check if there is an existing friend request from sender to receiver
+        const existingRequest = await friendRequests.findOne({
+            where: {
+                senderId: senderProfile.id,
+                receiverId: receiverProfile.id,
+            },
+        });
+
+        if (existingRequest) {
+            if (existingRequest.status === '1') {
+                return res.status(400).send({ error: 'Friend request already sent' });
+            } else if (existingRequest.status === '2') {
+                return res.status(400).send({ error: 'Friend request already accepted. Cannot send another request.' });
+            }
+        }
+
+        // Check if there is an existing friend request from receiver to sender with status '2'
+        const reverseExistingRequest = await friendRequests.findOne({
+            where: {
+                senderId: receiverProfile.id,
+                receiverId: senderProfile.id,
+                status: '2',
+            },
+        });
+
+        if (reverseExistingRequest) {
+            return res.status(400).send({ error: 'Friend request has already been accepted. Cannot send another request.' });
+        }
+
+        const friendRequest = await friendRequests.create({
+            senderId: senderProfile.id,
+            receiverId: receiverProfile.id,
+            status: '1',
+        });
+
+        res.send(friendRequest);
+    } catch (error) {
+        res.status(400).send({ error: error.message });
+    }
+});
 
 app.get('/api/user/profile/receiver/:uuid', async (req, res) => {
     const uuid = req.params.uuid;
@@ -1241,8 +1373,6 @@ app.get('/api/user/profile/receiver/:uuid', async (req, res) => {
     }
 });
 
-
-
 app.put('/friendRequests/:requestId/accept', async (req, res) => {
     const requestId = req.params.requestId;
 
@@ -1268,8 +1398,6 @@ app.put('/friendRequests/:requestId/accept', async (req, res) => {
         res.status(400).send({ error: error.message });
     }
 });
-
-
 
 app.delete('/delete/friend/request/:uuid', async (req, res) => {
     const friendRequestUUID = req.params.uuid;
@@ -2245,66 +2373,267 @@ app.post('/post/like', async (req, res) => {
 });
 
 
-
-// CRUSH_FRIEND //
+// CRUSH_FRIEND // ----------------------------------------------------------------------------------------------------
 const { crushes, ignores } = require('./models');
 
-app.post('add/crushes', async (req, res) => {
+app.post('/public/crushesRequest/', async (req, res) => {
+    const senderUUID = req.body.senderId;
+    const receiverUUID = req.body.receiverId;
+
+    if (!senderUUID || !receiverUUID) {
+        return res.status(400).send({ error: 'SenderUUID and ReceiverUUID are required' });
+    }
+
     try {
-        const { userProfile1Uuid, userProfile2Uuid } = req.body;
-
-        const userProfile1 = await userProfiles.findOne({
-            where: { uuid: userProfile1Uuid },
-        });
-        const userProfile2 = await userProfiles.findOne({
-            where: { uuid: userProfile2Uuid },
+        const senderUserInstance = await users.findOne({
+            where: { uuid: senderUUID },
+            include: userProfiles,
         });
 
-        if (!userProfile1 || !userProfile2) {
-            return res.status(404).send({ error: 'User profile not found' });
+        if (!senderUserInstance) {
+            return res.status(400).send({ error: 'Sender profile not found' });
         }
 
-        const newCrush = await crushes.create({
-            userProfile1Id: userProfile1.id,
-            userProfile2Id: userProfile2.id,
+        const senderUserProfileUuid = senderUserInstance.userProfile.uuid;
+
+        if (senderUserProfileUuid === receiverUUID) {
+            return res.status(422).send({ error: 'Unprocessable Entity: Cannot send your own profile to a crush' });
+        }
+
+        const senderProfile = await userProfiles.findOne({ where: { uuid: senderUserProfileUuid } });
+        const receiverProfile = await userProfiles.findOne({ where: { uuid: receiverUUID } });
+
+        if (!senderProfile || !receiverProfile) {
+            return res.status(400).send({ error: 'Sender or receiver profile not found' });
+        }
+
+        const existingRequest = await crushes.findOne({
+            where: {
+                userProfile1Id: senderProfile.id,
+                userProfile2Id: receiverProfile.id,
+            },
         });
 
-        return res.status(201).send(newCrush);
+        if (existingRequest) {
+            const newStatus = existingRequest.status === '1' ? '2' : '1';
+
+            const updatedCrushRequest = await crushes.update(
+                { status: newStatus },
+                {
+                    where: {
+                        userProfile1Id: senderProfile.id,
+                        userProfile2Id: receiverProfile.id,
+                    },
+                }
+            );
+
+            if (updatedCrushRequest > 0) {
+                return res.send({ success: true, message: 'Crush request updated successfully' });
+            } else {
+                return res.status(404).send({ success: false, error: 'Crush request not found' });
+            }
+        } else {
+            // If the request doesn't exist, create a new one
+            const newCrushRequest = await crushes.create({
+                userProfile1Id: senderProfile.id,
+                userProfile2Id: receiverProfile.id,
+                status: '2',
+            });
+
+            return res.send({ success: true, message: 'Crush request sent successfully', newCrushRequest });
+        }
+
     } catch (error) {
-        console.error(error);
-        return res.status(500).send({ error: 'Internal Server Error' });
+        res.status(400).send({ error: error.message });
     }
 });
 
-// IGNORE_FRIEDND //
-app.post('add/ignores', async (req, res) => {
+app.get('/get/public/crushesRequest/:uuid', async (req, res) => {
     try {
+        const userProfileUuid = req.params.uuid;
 
-        const { userProfile1Uuid, userProfile2Uuid } = req.body;
-
-        const userProfile1 = await userProfiles.findOne({
-            where: { uuid: userProfile1Uuid },
+        const crush = await crushes.findOne({
+            where: {
+                [Op.or]: [
+                    { '$userProfile1.uuid$': { [Op.eq]: userProfileUuid } },
+                    { '$userProfile2.uuid$': { [Op.eq]: userProfileUuid } },
+                ],
+            },
+            include: [
+                { model: userProfiles, as: 'userProfile1' },
+                { model: userProfiles, as: 'userProfile2' },
+            ],
         });
-        const userProfile2 = await userProfiles.findOne({
-            where: { uuid: userProfile2Uuid },
-        });
 
-        if (!userProfile1 || !userProfile2) {
-            return res.status(404).send({ error: 'User profile not found' });
+        if (!crush) {
+            return res.status(202).json({ success: false });
         }
 
-        const newIgnore = await ignores.create({
-            userProfile1Id: userProfile1.id,
-            userProfile2Id: userProfile2.id,
-        });
-
-        return res.status(201).send(newIgnore);
+        const status = crush.status;
+        res.json({ success: true, status });
     } catch (error) {
         console.error(error);
-        return res.status(500).send({ error: 'Internal Server Error' });
+        res.status(500).json({ message: 'Internal Server Error' });
     }
 });
 
+app.get('/get/countCrushes/:profileUuid', async (req, res) => {
+    try {
+        const { profileUuid } = req.params;
+
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: profileUuid },
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+
+        const crushCount = await crushes.count({
+            where: {
+                [sequelize.Op.or]: [
+                    { userProfile1Id: userProfile.id },
+                    { userProfile2Id: userProfile.id },
+                ],
+            },
+        });
+
+        res.json({ crushCount });
+    } catch (error) {
+        console.error('Error counting crushes:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// IGNORE_FRIEND // ----------------------------------------------------------------------------------------------------
+
+app.post('/public/ignoreRequest/', async (req, res) => {
+    const senderUUID = req.body.senderId;
+    const receiverUUID = req.body.receiverId;
+
+    if (!senderUUID || !receiverUUID) {
+        return res.status(400).send({ error: 'SenderUUID and ReceiverUUID are required' });
+    }
+
+    try {
+        const senderUserInstance = await users.findOne({
+            where: { uuid: senderUUID },
+            include: userProfiles,
+        });
+
+        if (!senderUserInstance) {
+            return res.status(400).send({ error: 'Sender profile not found' });
+        }
+
+        const senderUserProfileUuid = senderUserInstance.userProfile.uuid;
+
+        if (senderUserProfileUuid === receiverUUID) {
+            return res.status(422).send({ error: 'Unprocessable Entity: Cannot send your own profile to a ingonre' });
+        }
+
+        const senderProfile = await userProfiles.findOne({ where: { uuid: senderUserProfileUuid } });
+        const receiverProfile = await userProfiles.findOne({ where: { uuid: receiverUUID } });
+
+        if (!senderProfile || !receiverProfile) {
+            return res.status(400).send({ error: 'Sender or receiver profile not found' });
+        }
+
+        const existingRequest = await ignores.findOne({
+            where: {
+                userProfile1Id: senderProfile.id,
+                userProfile2Id: receiverProfile.id,
+            },
+        });
+
+        if (existingRequest) {
+            const newStatus = existingRequest.status === '1' ? '2' : '1';
+
+            const updatedIgnoreRequest = await ignores.update(
+                { status: newStatus },
+                {
+                    where: {
+                        userProfile1Id: senderProfile.id,
+                        userProfile2Id: receiverProfile.id,
+                    },
+                }
+            );
+
+            if (updatedIgnoreRequest > 0) {
+                return res.send({ success: true, message: 'Ignore request updated successfully' });
+            } else {
+                return res.status(404).send({ success: false, error: 'Ignore request not found' });
+            }
+        } else {
+            const ignoreRequest = await ignores.create({
+                userProfile1Id: senderProfile.id,
+                userProfile2Id: receiverProfile.id,
+                status: '2',
+            });
+
+            return res.send({ success: true, message: 'Ignore request sent successfully', ignoreRequest });
+        }
+
+    } catch (error) {
+        res.status(400).send({ error: error.message });
+    }
+});
+
+app.get('/get/public/ignoreRequest/:uuid', async (req, res) => {
+    try {
+        const userProfileUuid = req.params.uuid;
+
+        const ignore = await ignores.findOne({
+            where: {
+                [Op.or]: [
+                    { '$userProfile1.uuid$': { [Op.eq]: userProfileUuid } },
+                    { '$userProfile2.uuid$': { [Op.eq]: userProfileUuid } },
+                ],
+            },
+            include: [
+                { model: userProfiles, as: 'userProfile1' },
+                { model: userProfiles, as: 'userProfile2' },
+            ],
+        });
+
+        if (!ignore) {
+            return res.status(202).json({ success: false });
+        }
+
+        const status = ignore.status;
+        res.json({ success: true, status });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal Server Error' });
+    }
+});
+
+app.get('/get/ignoreCount/:profileUuid', async (req, res) => {
+    try {
+        const { profileUuid } = req.params;
+
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: profileUuid },
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+
+        const ignoreCount = await ignores.count({
+            where: {
+                [sequelize.Op.or]: [
+                    { userProfile1Id: userProfile.id },
+                    { userProfile2Id: userProfile.id },
+                ],
+            },
+        });
+
+        res.json({ ignoreCount });
+    } catch (error) {
+        console.error('Error counting ignores:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
 // -----------------------------------------------------------------------------------------------
 
@@ -2360,7 +2689,76 @@ app.get('/search/:searchTerm', async (req, res) => {
 });
 
 
+// -----------------------------------------------------------------------------------------------
 
+const { stories } = require('./models');
+
+// CREATE STORIES //
+app.post('/stories/:uuid', async (req, res) => {
+    try {
+
+        const { data, postText, textColor } = req.body;
+
+        if (typeof data !== 'string' || data.trim() === '') {
+            return res.status(400).json({ success: false, error: 'Invalid or missing data or postText' });
+        }
+
+        const matches = data.match(/^data:image\/([a-zA-Z0-9]+);base64,/);
+        const fileExtension = matches ? matches[1] : 'png';
+        const uuidN = uuid.v4();
+        const newFileName = `${uuidN}.${fileExtension}`;
+        const image = Buffer.from(data.replace(/^data:image\/[a-zA-Z0-9]+;base64,/, ''), 'base64');
+        const filePath = __dirname + '/stories/' + newFileName;
+        fs.writeFileSync(filePath, image);
+        const fileLink = newFileName;
+        console.log(fileLink);
+
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: req.params.uuid },
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ success: false, error: 'User profile not found' });
+        }
+
+        const newPost = await stories.create({
+            userProfileId: userProfile.id,
+            text: postText || null,
+            image: fileLink,
+            textColor: textColor
+        });
+
+        return res.status(201).send({ success: true, post: newPost });
+    } catch (error) {
+        console.log(error);
+        res.status(500).send({ success: false, error: 'Internal Server Error' });
+    }
+});
+
+
+// GET STORIES //
+app.get('/get/stories/:uuid', async (req, res) => {
+    try {
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: req.params.uuid },
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ success: false, error: 'User profile not found' });
+        }
+
+        const userStories = await stories.findAll({
+            where: { userProfileId: userProfile.id },
+            attributes: ['id', 'text', 'textColor', 'image', 'createdAt'],
+            order: [['createdAt', 'DESC']],
+        });
+
+        return res.status(200).json({ success: true, stories: userStories });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+});
 
 
 

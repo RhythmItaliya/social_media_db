@@ -39,9 +39,14 @@ module.exports = (sequelize, DataTypes) => {
       // ignores
       userProfiles.hasMany(models.ignores, { foreignKey: 'userProfile1Id', as: 'ignores1' });
       userProfiles.hasMany(models.ignores, { foreignKey: 'userProfile2Id', as: 'ignores2' });
-      
+
       // likes
       userProfiles.hasMany(models.postLikes, { foreignKey: 'userProfileId', as: 'likedPosts' });
+
+      // stories
+      // In userProfiles model's associate method
+      userProfiles.hasMany(models.stories, { foreignKey: 'userProfileId', as: 'stories' });
+
     }
   }
 
@@ -73,6 +78,11 @@ module.exports = (sequelize, DataTypes) => {
     bio: {
       // allowNull: false,
       type: DataTypes.TEXT
+    },
+    isPublic: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: 0,
     },
     darkMode: {
       allowNull: false,
