@@ -11,10 +11,9 @@ const fs = require('fs');
 
 const app = express();
 
-// Use CORS middleware with options
 const corsOptions = {
     origin: 'http://localhost:3000', // Frontend origin
-    credentials: true, // Enable credentials (cookies, headers)
+    credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     allowedHeaders: 'Content-Type, Authorization',
     optionsSuccessStatus: 204,
@@ -25,7 +24,8 @@ app.use(cors(corsOptions));
 app.use(bodyParser.json({ limit: '20mb' }));
 app.use(cookieParser('QWERTYUIOPLKJHGFDSAZXCVBNM'));
 
-// Socket.IO setup
+const cron = require('node-cron');
+
 // Socket.IO setup
 const http = require('http');
 const socketIO = require('socket.io');
@@ -41,7 +41,7 @@ const io = socketIO(server, {
 });
 
 
-//  RIGISTER API ----------------------------------------------------------------------------------------------
+//  RIGISTER API =============================================================================================================================================================
 app.post('/register', async (req, res) => {
     const { users } = require('./models');
 
@@ -143,7 +143,7 @@ app.get('/verify/login/:token', async (req, res) => {
 });
 
 
-// LOGIN API ----------------------------------------------------------------------------------------------
+// LOGIN API =============================================================================================================================================================
 app.post('/login', async (req, res) => {
     const { users } = require('./models');
 
@@ -197,7 +197,7 @@ app.post('/logout', (req, res) => {
     }
 });
 
-// RESET PASSWORD REQUEST MAIL ----------------------------------------------------------------------------------------------
+// RESET PASSWORD REQUEST MAIL =============================================================================================================================================================
 
 app.post('/reset/request', async (req, res) => {
     const { users } = require('./models');
@@ -262,7 +262,7 @@ app.get('/resetlink/verify/:token', async (req, res) => {
     }
 });
 
-// PASSWORD RESET ----------------------------------------------------------------------------------------------
+// PASSWORD RESET =============================================================================================================================================================
 
 app.post('/reset/password/:token', async (req, res) => {
     const { users } = require('./models');
@@ -320,7 +320,7 @@ app.post('/reset/password/:token', async (req, res) => {
 
 
 
-// USERS FIND ----------------------------------------------------------------------------------------------
+// USERS FIND =============================================================================================================================================================
 
 app.get('/users/:uuid', async (req, res) => {
     const { users, userProfiles } = require('./models');
@@ -350,8 +350,31 @@ app.get('/users/:uuid', async (req, res) => {
 });
 
 
-// username find //
+// USERNAME_FIND // =============================================================================================================================================================
 app.get('/:username', async (req, res) => {
+    const { users } = require('./models');
+    try {
+        const { username } = req.params;
+
+        const user = await users.findOne({
+            where: {
+                username: username
+            },
+            attributes: ['username']
+        });
+
+        if (user) {
+            res.status(202).send({ success: true });
+        } else {
+            res.status(404).send({ success: false });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+app.get('/found/:username', async (req, res) => {
     const { users, userProfiles, profilePhotes } = require('./models');
     try {
         const { username } = req.params;
@@ -372,9 +395,9 @@ app.get('/:username', async (req, res) => {
         });
 
         if (user) {
-            res.send({ success: true, user });
+            res.status(202).send({ success: true, user });
         } else {
-            res.send({ success: false, message: 'User not found' });
+            res.status(404).send({ success: false });
         }
     } catch (error) {
         console.error(error);
@@ -382,33 +405,8 @@ app.get('/:username', async (req, res) => {
     }
 });
 
-// app.get('/check/:username', async (req, res) => {
-//     try {
-//         const { username } = req.params;
 
-//         if (!username) {
-//             return res.send({ success: false });
-//         }
-
-//         // Find user by username
-//         const user = await users.findOne({
-//             where: { username },
-//         });
-
-//         if (user) {
-//             return res.send({ success: true });
-//         } else {
-//             return res.send({ success: false });
-//         }
-//     } catch (error) {
-//         console.error('Error in /check/:username:', error);
-//         return res.status(500).send({ success: false, error: 'Internal Server Error', message: error.message });
-//     }
-// });
-
-
-
-// PROFILE CREATE ----------------------------------------------------------------------------------------------
+// PROFILE CREATE // =============================================================================================================================================================
 
 // FINE PROFILE REDICTRE
 app.get('/api/users/profileCreated/:uuid', async (req, res) => {
@@ -430,7 +428,7 @@ app.get('/api/users/profileCreated/:uuid', async (req, res) => {
     }
 });
 
-// MAIN_PROFILE_CREATE
+// MAIN_PROFILE_CREATE // =============================================================================================================================================================
 app.post('/api/profilepage/create/:uuid', async (req, res) => {
 
     const path = require('path');
@@ -500,7 +498,7 @@ app.post('/api/profilepage/create/:uuid', async (req, res) => {
 });
 
 
-// DARK MODE
+// DARK MODE // =============================================================================================================================================================
 app.get('/api/user/profiles/:uuid/mode', async (req, res) => {
     const { users, userProfiles } = require('./models');
 
@@ -570,9 +568,6 @@ app.put('/api/user/profiles/:uuid/mode', async (req, res) => {
 });
 
 
-
-
-
 app.post('/userProfile/create/:uuid', async (req, res) => {
     const { users, userProfiles } = require('./models');
 
@@ -603,7 +598,7 @@ app.post('/userProfile/create/:uuid', async (req, res) => {
     }
 });
 
-//  FIND FATA FOR SETTINGS
+//  FIND FATA FOR SETTINGS // =============================================================================================================================================================
 app.get('/userProfile/get/:uuid', async (req, res) => {
     const { userProfiles, users, profilePhotes } = require('./models');
 
@@ -696,7 +691,7 @@ app.put('/userProfile/update/:uuid', async (req, res) => {
 });
 
 
-// PROFILE GET ----------------------------------------------------------------------------------------------
+// PROFILE GET // =============================================================================================================================================================
 
 // SUGGESTED_FRIEND
 app.get('/api/userProfiles/:uuid', async (req, res) => {
@@ -801,7 +796,7 @@ app.get('/api/friendrequests/find/:uuid', async (req, res) => {
 });
 
 
-// PROFILE PHOTOS ----------------------------------------------------------------------------------------------
+// PROFILE PHOTOS // =============================================================================================================================================================
 
 // FINDE_PROFILE_PHOTOES
 app.get('/profilephotoes/:uuid', async (req, res) => {
@@ -906,7 +901,6 @@ app.post('/profilephotoes/:uuid', async (req, res) => {
 });
 
 
-
 // UPDATE PROFILE PHOTO
 app.put('/profilephotoes/update/:uuid', async (req, res) => {
     const { profilePhotes, userProfiles } = require('./models');
@@ -978,7 +972,6 @@ app.put('/profilephotoes/update/:uuid', async (req, res) => {
     }
 });
 
-
 // DELETE_PROFILE_PHOTOES
 app.delete('/profilephotoes/delete/:uuid', async (req, res) => {
 
@@ -1026,9 +1019,7 @@ app.delete('/profilephotoes/delete/:uuid', async (req, res) => {
 });
 
 
-// ------------------------------------------------------------------------------------  
-// FRIEND API
-
+// FRIEND // =============================================================================================================================================================
 
 const { userProfiles, friendships, friendRequests, profilePhotes } = require('./models');
 
@@ -1137,10 +1128,7 @@ app.get('/get/public/friendRequests/:uuid', async (req, res) => {
     }
 });
 
-
-
-
-// -----------------------------
+// =============================================================================================================================================================
 
 // FRIENDREQUESTS GET
 app.get('/friendRequests/:receiverUUID', async (req, res) => {
@@ -1424,10 +1412,7 @@ app.delete('/delete/friend/request/:uuid', async (req, res) => {
     }
 });
 
-
-
-// ------------------------------------------------------------------------------------  
-// FIND FRIENDSHPIS
+// FIND FRIENDSHPIS // =============================================================================================================================================================
 
 app.get('/api/friendships/users/:profileUuid', async (req, res) => {
     try {
@@ -1492,7 +1477,7 @@ app.get('/api/friendships/users/:profileUuid', async (req, res) => {
     }
 });
 
-// FRIENDSHIP COUNT //
+// FRIENDSHIP COUNT // 
 app.get('/api/friendships/count/:profileUuid', async (req, res) => {
     try {
         const profileUuid = req.params.profileUuid;
@@ -1523,7 +1508,39 @@ app.get('/api/friendships/count/:profileUuid', async (req, res) => {
     }
 });
 
-//CHAT //---------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//CHAT // =============================================================================================================================================================
 
 const { messages } = require('./models');
 
@@ -1625,7 +1642,6 @@ app.get('/get-messages/:uuid', async (req, res) => {
     }
 });
 
-
 // CHAT_LAST_MESSEGE_GET // 
 app.get('/get-last-message/:uuid', async (req, res) => {
     try {
@@ -1670,7 +1686,72 @@ app.get('/get-last-message/:uuid', async (req, res) => {
 
 
 
-// POST  //--------------------------------------------------------------------- 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// POST  // ============================================================================================================================================================= 
 
 const { userPosts, users } = require('./models');
 
@@ -1704,6 +1785,60 @@ app.post('/api/posts', async (req, res) => {
             return res.status(404).json({ success: false, error: 'User profile not found' });
         }
 
+        const isVisibility = req.body.isVisibility;
+        const validatedIsVisibility = (isVisibility === '0' || isVisibility === '1') ? isVisibility : '0';
+        const isPublic = validatedIsVisibility === '0';
+
+        const newPost = await userPosts.create({
+            userProfileId: userProfile.id,
+            postText: req.body.postText,
+            isPhoto: req.body.isPhoto,
+            caption: req.body.caption,
+            location: req.body.location,
+            isVisibility: validatedIsVisibility,
+            postUploadURLs: fileLink,
+            hashtags: req.body.hashtags,
+        });
+
+        return res.status(201).send({ success: true, post: newPost });
+    } catch (error) {
+        console.log(error);
+        res.status(500).send({ success: false, error: 'Internal Server Error' });
+    }
+});
+
+// Assuming you're using Express.js
+app.post('/api/create/posts/:uuid', async (req, res) => {
+    try {
+        const userProfileUUID = req.params.uuid;
+
+        // Find the user profile by UUID
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: userProfileUUID },
+        });
+
+        // Check if the user profile exists
+        if (!userProfile) {
+            return res.status(404).json({ success: false, error: 'User profile not found' });
+        }
+
+        const { data } = req.body;
+
+        // Check if data is a non-empty string
+        if (typeof data !== 'string' || data.trim() === '') {
+            return res.status(400).json({ success: false, error: 'Invalid or missing data' });
+        }
+
+        const matches = data.match(/^data:image\/([a-zA-Z0-9]+);base64,/);
+        const fileExtension = matches ? matches[1] : 'png';
+        const uuidN = uuid.v4();
+        const newFileName = `${uuidN}.${fileExtension}`;
+        const image = Buffer.from(data.replace(/^data:image\/[a-zA-Z0-9]+;base64,/, ''), 'base64');
+        const filePath = __dirname + '/uploads/' + newFileName;
+        fs.writeFileSync(filePath, image);
+        const fileLink = newFileName;
+
+        // Post Creation Logic
         const isVisibility = req.body.isVisibility;
         const validatedIsVisibility = (isVisibility === '0' || isVisibility === '1') ? isVisibility : '0';
         const isPublic = validatedIsVisibility === '0';
@@ -1911,8 +2046,6 @@ app.put('/api/posts/visibility/:postId', async (req, res) => {
     }
 });
 
-
-
 // DELETE POST //
 app.delete('/api/posts/delete/:postId', async (req, res) => {
     try {
@@ -2039,7 +2172,7 @@ app.get('/api/user/posts/profile/public/:uuid', async (req, res) => {
 });
 
 
-// POST_COMMENT // ----------------------------------------------------------
+// POST_COMMENT // =============================================================================================================================================================
 
 const { postComments, commentLikes, postLikes } = require('./models');
 
@@ -2373,7 +2506,7 @@ app.post('/post/like', async (req, res) => {
 });
 
 
-// CRUSH_FRIEND // ----------------------------------------------------------------------------------------------------
+// CRUSH_FRIEND // =============================================================================================================================================================
 const { crushes, ignores } = require('./models');
 
 app.post('/public/crushesRequest/', async (req, res) => {
@@ -2477,7 +2610,7 @@ app.get('/get/public/crushesRequest/:uuid', async (req, res) => {
     }
 });
 
-app.get('/get/countCrushes/:profileUuid', async (req, res) => {
+app.get('/get/countCrushes/count/:profileUuid', async (req, res) => {
     try {
         const { profileUuid } = req.params;
 
@@ -2505,7 +2638,58 @@ app.get('/get/countCrushes/:profileUuid', async (req, res) => {
     }
 });
 
-// IGNORE_FRIEND // ----------------------------------------------------------------------------------------------------
+// CRUSH DATA GET //
+app.get('/get/userProfileCrushes/:profileUUID', async (req, res) => {
+    const profileUUID = req.params.profileUUID;
+
+    if (!profileUUID) {
+        return res.status(400).send({ error: 'Profile UUID is required' });
+    }
+
+    try {
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: profileUUID }
+        });
+
+        if (!userProfile) {
+            return res.status(404).send({ error: 'User profile not found' });
+        }
+
+        const crushRequests = await crushes.findAll({
+            where: {
+                userProfile1Id: userProfile.id,
+                status: '2'
+            },
+            include: [
+                {
+                    model: userProfiles,
+                    as: 'userProfile2',
+                    attributes: ['firstName', 'lastName', 'uuid'],
+                    include: [
+                        {
+                            model: users,
+                            attributes: ['username']
+                        },
+                        {
+                            model: profilePhotes,
+                            attributes: ['photoURL']
+                        }
+                    ]
+                }
+            ]
+        });
+
+        const crushesInfo = crushRequests.map(crush => ({
+            userProfile2: crush.userProfile2
+        }));
+
+        return res.send({ success: true, crushesInfo });
+    } catch (error) {
+        res.status(400).send({ error: error.message });
+    }
+});
+
+// IGNORE_FRIEND // =============================================================================================================================================================
 
 app.post('/public/ignoreRequest/', async (req, res) => {
     const senderUUID = req.body.senderId;
@@ -2635,7 +2819,108 @@ app.get('/get/ignoreCount/:profileUuid', async (req, res) => {
     }
 });
 
-// -----------------------------------------------------------------------------------------------
+// IGNORE DATA GET //
+app.get('/get/userProfileIgnores/:profileUUID', async (req, res) => {
+    const profileUUID = req.params.profileUUID;
+
+    if (!profileUUID) {
+        return res.status(400).send({ error: 'Profile UUID is required' });
+    }
+
+    try {
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: profileUUID }
+        });
+
+        if (!userProfile) {
+            return res.status(404).send({ error: 'User profile not found' });
+        }
+
+        const ignoreList = await ignores.findAll({
+            where: {
+                userProfile1Id: userProfile.id,
+                status: '2'
+            },
+            include: [
+                {
+                    model: userProfiles,
+                    as: 'userProfile2',
+                    attributes: ['firstName', 'lastName', 'uuid'],
+                    include: [
+                        {
+                            model: users,
+                            attributes: ['username']
+                        },
+                        {
+                            model: profilePhotes,
+                            attributes: ['photoURL']
+                        }
+                    ]
+                }
+            ]
+        });
+
+        const ignoreInfo = ignoreList.map(ignore => ({
+            userProfile2: ignore.userProfile2
+        }));
+
+        return res.send({ success: true, ignoreInfo });
+    } catch (error) {
+        res.status(400).send({ error: error.message });
+    }
+});
+
+// FRIENDSHIP, CRUSH, AND IGNORE COUNT //
+app.get('/api/friendships-crushes-ignores/count/:profileUuid', async (req, res) => {
+    try {
+        const profileUuid = req.params.profileUuid;
+
+        // Find the user profile with the given UUID
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: profileUuid },
+        });
+
+        if (!userProfile) {
+            return res.status(404).send({ error: 'User profile not found' });
+        }
+
+        const friendshipCount = await friendships.count({
+            where: {
+                [Op.or]: [
+                    { userProfile1Id: userProfile.id },
+                    { userProfile2Id: userProfile.id },
+                ],
+            },
+        });
+
+        const crushCount = await crushes.count({
+            where: {
+                [Op.or]: [
+                    { userProfile1Id: userProfile.id },
+                    { userProfile2Id: userProfile.id },
+                ],
+                status: '2'
+            },
+        });
+
+        const ignoreCount = await ignores.count({
+            where: {
+                [Op.or]: [
+                    { userProfile1Id: userProfile.id },
+                    { userProfile2Id: userProfile.id },
+                ],
+                status: '2'
+            },
+        });
+
+        res.send({ friendshipCount, crushCount, ignoreCount });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+// SEARCH_PROFILE =============================================================================================================================================================
 
 // SEARCH_PROFILE
 app.get('/search/:searchTerm', async (req, res) => {
@@ -2689,7 +2974,7 @@ app.get('/search/:searchTerm', async (req, res) => {
 });
 
 
-// -----------------------------------------------------------------------------------------------
+// STORIES // =============================================================================================================================================================
 
 const { stories } = require('./models');
 
@@ -2735,7 +3020,6 @@ app.post('/stories/:uuid', async (req, res) => {
     }
 });
 
-
 // GET STORIES //
 app.get('/get/stories/:uuid', async (req, res) => {
     try {
@@ -2749,7 +3033,168 @@ app.get('/get/stories/:uuid', async (req, res) => {
 
         const userStories = await stories.findAll({
             where: { userProfileId: userProfile.id },
-            attributes: ['id', 'text', 'textColor', 'image', 'createdAt'],
+            attributes: ['id', 'text', 'textColor', 'image', 'createdAt', 'uuid'],
+            order: [['createdAt', 'DESC']],
+        });
+
+        return res.status(200).json({ success: true, stories: userStories });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+});
+
+// DELETE STORY //
+app.delete('/delete/story/:uuid', async (req, res) => {
+    try {
+        const storyToDelete = await stories.findOne({
+            where: { uuid: req.params.uuid },
+        });
+
+        if (!storyToDelete) {
+            return res.status(404).json({ success: false, error: 'Story not found' });
+        }
+
+        const filePath = __dirname + '/stories/' + storyToDelete.image;
+        fs.unlinkSync(filePath);
+
+        await storyToDelete.destroy();
+
+        return res.status(200).json({ success: true, message: 'Story deleted successfully' });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+});
+
+// AUTO DELETE //
+app.post('/schedule/delete/stories', async (req, res) => {
+    try {
+        const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+
+        const storiesToDelete = await stories.findAll({
+            where: {
+                createdAt: {
+                    [Op.lt]: twelveHoursAgo
+                }
+            }
+        });
+
+        for (const story of storiesToDelete) {
+            const filePath = __dirname + '/stories/' + story.image;
+            fs.unlinkSync(filePath);
+            await story.destroy();
+        }
+
+        console.log('Automatic deletion of stories completed successfully.');
+        res.status(200).json({ success: true, message: 'Automatic deletion of stories completed successfully.' });
+    } catch (error) {
+        console.error('Error occurred during automatic deletion of stories:', error);
+        res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+});
+
+cron.schedule('0 */12 * * *', async () => {
+    try {
+        await fetch('http://localhost:8080/schedule/delete/stories', { method: 'POST', credentials: 'include' });
+    } catch (error) {
+        console.error('Error occurred while triggering automatic deletion of stories:', error);
+    }
+});
+
+// FIND_FRIEND_STRORY
+app.get('/api/friendships/users/story/:profileUuid', async (req, res) => {
+    try {
+        const profileUuid = req.params.profileUuid;
+
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: profileUuid },
+        });
+
+        if (!userProfile) {
+            return res.status(404).send({ error: 'User profile not found' });
+        }
+
+        const foundFriendships = await friendships.findAll({
+            where: {
+                [Op.or]: [
+                    { userProfile1Id: userProfile.id },
+                    { userProfile2Id: userProfile.id },
+                ],
+            },
+            include: [
+                {
+                    model: userProfiles,
+                    as: 'userProfile1',
+                    attributes: ['id', 'uuid'],
+                    include: [{ model: users, attributes: ['username'] }],
+                },
+                {
+                    model: userProfiles,
+                    as: 'userProfile2',
+                    attributes: ['id', 'uuid'],
+                    include: [{ model: users, attributes: ['username'] }],
+                },
+            ],
+        });
+
+        const friendProfiles = await Promise.all(foundFriendships.map(async (friendship) => {
+            const friendUserProfile = friendship.userProfile1.id !== userProfile.id
+                ? friendship.userProfile1
+                : friendship.userProfile2;
+
+            if (friendUserProfile.id === userProfile.id) {
+                return null;
+            }
+
+            const storyExists = await stories.findOne({
+                where: { userProfileId: friendUserProfile.id }
+            });
+
+            if (storyExists) {
+                const photoURLRecord = await profilePhotes.findOne({
+                    where: { userProfileId: friendUserProfile.id },
+                    attributes: ['photoURL'],
+                });
+
+                const photoURL = photoURLRecord?.photoURL;
+                const completeImageUrl = photoURL ? `http://static.profile.local/${photoURL}` : null;
+
+                return {
+                    ...friendUserProfile.toJSON(),
+                    photoURL: completeImageUrl,
+                    username: friendUserProfile.user.username,
+                };
+            } else {
+                return null;
+            }
+        }));
+
+        const filteredFriendProfiles = friendProfiles.filter(profile => profile !== null);
+
+        res.send({ friends: filteredFriendProfiles });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+// GET_FRIEND_STORY
+app.get('/get/friend/stories/:uuid', async (req, res) => {
+    try {
+        const userProfile = await userProfiles.findOne({
+            where: { uuid: req.params.uuid },
+        });
+
+        if (!userProfile) {
+            return res.status(404).json({ success: false, error: 'User profile not found' });
+        }
+
+        const userStories = await stories.findAll({
+            where: {
+                userProfileId: userProfile.id
+            },
+            attributes: ['id', 'text', 'textColor', 'image', 'createdAt', 'uuid'],
             order: [['createdAt', 'DESC']],
         });
 
@@ -2762,4 +3207,10 @@ app.get('/get/stories/:uuid', async (req, res) => {
 
 
 
+
+
+
+
+
+// ========== SERVER ========== //
 server.listen(8080, () => console.log('connected...'));
