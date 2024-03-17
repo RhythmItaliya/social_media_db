@@ -1509,37 +1509,6 @@ app.get('/api/friendships/count/:profileUuid', async (req, res) => {
 });
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 //CHAT // =============================================================================================================================================================
 
 const { messages } = require('./models');
@@ -1575,13 +1544,6 @@ io.on('connection', (socket) => {
             const { id: senderId } = senderUser;
             const { id: receiverId } = receiverUser;
 
-            console.log('New message received on server:', {
-                senderId,
-                receiverId,
-                content,
-                room,
-            });
-
             const newMessage = await messages.create({
                 senderId,
                 receiverId,
@@ -1589,7 +1551,21 @@ io.on('connection', (socket) => {
                 roomId: room,
             });
 
-            io.to(room).emit('new-message', newMessage);
+            io.to(room).emit('new-message', {
+                senderId: senderUuid,
+                receiverId: receiverUuid,
+                content,
+                room,
+            });
+
+            console.log('New message received on server:', {
+                senderId: senderUuid,
+                receiverId: receiverUuid,
+                content,
+                room,
+            });
+
+            // io.to(room).emit('new-message', newMessage);
         } catch (error) {
             console.error('Error processing message:', error);
         }
@@ -1682,72 +1658,6 @@ app.get('/get-last-message/:uuid', async (req, res) => {
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1907,9 +1817,9 @@ app.get('/find/api/posts/:userProfileUuid', async (req, res) => {
             ],
         });
 
-        // Fetch posts of the user's friends
+        // // Fetch posts of the user's friends
         const friendsPosts = await userPosts.findAll({
-            where: { userProfileId: friendUserProfileIds, isVisibility: 0 },
+            where: { userProfileId: friendUserProfileIds, isVisibility: 1 },
         });
 
         // Find the associated profile photos for friends
