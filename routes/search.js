@@ -21,7 +21,8 @@ router.get('/search/:searchTerm', async (req, res) => {
                             { '$userProfile.lastName$': { [Op.like]: `%${searchTerm}%` } }
                         ]
                     },
-                    { isActive: 1 }
+                    { isActive: 1 },
+                    { profileCreated: 1 }
                 ]
             },
             include: [{
