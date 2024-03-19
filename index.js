@@ -1,327 +1,61 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+
+const sendMail = require('./untils/mailer');
+const config = require('./config');
+
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const cookieParser = require('cookie-parser');
+const { param, body, validationResult } = require('express-validator');
 const { Op, literal } = require('sequelize');
-const cors = require('cors');
 const uuid = require('uuid');
-const sendMail = require('./untils/mailer');
 const fs = require('fs');
-
-const app = express();
-
-const corsOptions = {
-    origin: 'http://localhost:3000', // Frontend origin
-    credentials: true,
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    allowedHeaders: 'Content-Type, Authorization',
-    optionsSuccessStatus: 204,
-};
-
-app.use(cors(corsOptions));
-
-app.use(bodyParser.json({ limit: '20mb' }));
-app.use(cookieParser('QWERTYUIOPLKJHGFDSAZXCVBNM'));
-
 const cron = require('node-cron');
 
-// Socket.IO setup
+const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const app = express();
+
+// ========== // SOCKET.IO // ========== //
 const http = require('http');
 const socketIO = require('socket.io');
-
 const server = http.createServer(app);
-const io = socketIO(server, {
-    cors: {
-        origin: 'http://localhost:3000',
-        methods: ['GET', 'POST'],
-        credentials: true,
-        allowedHeaders: ['Content-Type', 'Authorization'],
-    },
-});
+const io = socketIO(server, config.socketIO);
+
+// ========== // CORS // ========== //
+app.use(cors(config.corsOptions));
+app.use(bodyParser.json({ limit: '20mb' }));
+app.use(cookieParser(config.cookieSecret));
+
+// ========== // SERVER // ========== //
+server.listen(config.server.port, () => console.log('Server is Conneted...', config.server.port));
+
+// ========== // ROUTES // ========== //
+const authRoutes = require('./routes/auth');
+const storiesRoutes = require('./routes/stories');
+const searchRoutes = require('./routes/search');
+const crushesRoutes = require('./routes/crushes');
+const ignoresRoutes = require('./routes/ignores');
+
+// AUTH //
+app.use('/auth', authRoutes);
+
+// STORIES //
+app.use('/stories', storiesRoutes);
+
+// SEARCH //
+app.use('/search', searchRoutes)
+
+// CRUSH //
+app.use('/crushes', crushesRoutes);
+
+// IGNORE //
+app.use('/ignores', ignoresRoutes);
 
 
-//  RIGISTER API =============================================================================================================================================================
-app.post('/register', async (req, res) => {
-    const { users } = require('./models');
-
-    try {
-        // fill username email and password
-        if (!req.body.username || !req.body.password || !req.body.email) {
-            return res.status(400).send('Username, Password, and Email are required.');
-        }
-
-        // Check password length
-        if (req.body.password.length < 8) {
-            return res.status(400).send('Password is too short; minimum 8 characters required.');
-        }
-
-        // check username length
-        if (req.body.username.length < 3 || req.body.username.length > 255) {
-            return res.status(400).send('Username must be between 3 to 255 characters.');
-        }
-
-        // email validation
-        const userEmail = await users.findOne({
-            where: {
-                email: req.body.email,
-            }
-        });
-
-        if (userEmail) {
-            return res.status(409).send({
-                isEmail: false
-            });
-        }
-
-        const userUsername = await users.findOne({
-            where: {
-                username: req.body.username,
-            }
-        });
-
-        if (userUsername) {
-            return res.status(409).send('Username is already taken');
-        }
-
-        const token = uuid.v1();
-
-        users.create({
-            username: req.body.username,
-            password: req.body.password,
-            email: req.body.email,
-            token: token
-        });
-
-        const htmlBody = `<b>To verify your account: <a href="http://localhost:3000/verify/login/${token}">Link</a></b>`;
-        sendMail(req.body.email, 'Your verify link', htmlBody);
-
-        return res.status(201).send('Please check your email confirmation...');
-
-    } catch (e) {
-        console.error(e);
-        return res.status(500).send('Lagata hai sever me error hai...');
-    }
-});
-
-app.get('/verify/login/:token', async (req, res) => {
-    const { users } = require('./models');
-
-    try {
-        const userV = await users.findOne({
-            where: {
-                token: req.params.token
-            }
-        });
-
-        if (userV == null) {
-            return res.send({
-                isValid: false, // Link is Expired...
-            });
-        }
-
-        const token = uuid.v1();
-
-        users.update(
-            {
-                token: token,
-                isActive: 1
-            },
-            {
-                where: {
-                    id: userV.id
-                }
-            });
-        return res.status(201).send({
-            isValid: true, // Link is verify...
-        });
-
-    } catch (e) {
-        console.log(e);
-        return res.status(500).send('Lagata hai sever me error hai...');
-    }
-});
-
-
-// LOGIN API =============================================================================================================================================================
-app.post('/login', async (req, res) => {
-    const { users } = require('./models');
-
-    if ((typeof (req.body.username) === 'undefined') || (typeof (req.body.password) === 'undefined')) {
-        return res.status(400).send('Pls fill the fild...')
-    }
-
-    const userL = await users.findOne({
-        where: {
-            [Op.or]: {
-                username: req.body.username,
-                email: req.body.username,
-            },
-            [Op.and]: {
-                isActive: 1
-            }
-        }
-    });
-    if (!userL) {
-        return res.status(401).send({ 'error': 'username and password is incorrect...' });
-    }
-
-    const check = bcrypt.compareSync(req.body.password, userL.password);
-
-    if (check) {
-        const token = jwt.sign({ uuid: userL.uuid }, 'ASXCVBNMPOJHGCXZWERTYUUHJBLKJHGED'); // jsonwebtoken
-
-        res.cookie('X-Access-Token', token, { maxAge: 7776000000, signed: true, path: '/', secure: true, httpOnly: true }); // cookies
-
-        return res.status(201).send({
-            "X-Access-Token": token,
-            "uuid": userL.uuid,
-            "username": userL.username
-        });
-    } else {
-        return res.status(401).send({ 'error': 'username and password is incorrect....' });
-    }
-});
-
-
-app.post('/logout', (req, res) => {
-    try {
-        res.clearCookie('X-Access-Token');
-
-        console.log('Token invalidated on the server');
-
-        res.status(200).json({ message: 'Logout successful' });
-    } catch (error) {
-        console.error('Error during logout:', error);
-        res.status(500).json({ error: 'Internal Server Error.' });
-    }
-});
-
-// RESET PASSWORD REQUEST MAIL =============================================================================================================================================================
-
-app.post('/reset/request', async (req, res) => {
-    const { users } = require('./models');
-
-    try {
-        // email exists
-        const resetlink = await users.findOne({
-            where: {
-                email: req.body.email
-            }
-        });
-
-        if (!resetlink) {
-            return res.status(404).send('Email not found.');
-        }
-
-        const token = uuid.v1();
-
-        await users.update(
-            {
-                token: token,
-            },
-            {
-                where: {
-                    id: resetlink.id
-                }
-            });
-
-        const resetLink = `http://localhost:3000/reset/password/${token}"`;
-        sendMail(resetlink.email, 'Your Reset link', resetLink);
-
-        res.status(200).send('Password reset link sent successfully.');
-
-    } catch (e) {
-        console.log(e);
-        return res.status(500).send('Lagata hai sever me error hai...');
-    }
-});
-
-app.get('/resetlink/verify/:token', async (req, res) => {
-    const { users } = require('./models');
-
-    try {
-        const userF = await users.findOne({
-            where: {
-                token: req.params.token
-            }
-        });
-
-        if (!userF) {
-            return res.status(404).send({
-                isValid: false,
-                messege: "Link is Expired"
-            });
-        }
-
-        return res.status(201).send('Reset link is valid.');
-
-    } catch (error) {
-        console.log(e);
-        return res.status(500).send('Lagata hai sever me error hai...');
-    }
-});
-
-// PASSWORD RESET =============================================================================================================================================================
-
-app.post('/reset/password/:token', async (req, res) => {
-    const { users } = require('./models');
-
-    try {
-        if ((typeof (req.body.password1) === 'undefined') || (typeof (req.body.password2) === 'undefined')) {
-            return res.send('Pls fill the password fild...')
-        }
-
-        if (req.body.password1.length < 8 || req.body.password2.length < 8) {
-            return res.status(400).send('Password is too short; minimum 8 characters required.');
-        }
-
-        if (req.body.password1 != req.body.password2) {
-            return res.send('Your password do not match...');
-        }
-
-        const resetToken = req.params.token;
-
-        const userU = await users.findOne({
-            where: {
-                token: resetToken
-            }
-        });
-
-        if (!userU) {
-            return res.status(404).send('This link has expired or is invalid.');
-        }
-
-        const token = uuid.v1();
-
-        const updatedUser = await users.update(
-            {
-                password: bcrypt.hashSync(req.body.password2, 10),
-                token: token,
-                isActive: 1
-            },
-            {
-                where: {
-                    token: req.params.token
-                },
-            }
-        );
-        if (!updatedUser) {
-            return res.status(404).send('User not found');
-        }
-
-        res.status(201).send('Your password has been updated...');
-
-    } catch (e) {
-        console.log(e);
-        return res.status(500).send('Lagata hai sever me error hai...');
-    }
-});
-
-
+// ========== // API START // ========== //
 
 // USERS FIND =============================================================================================================================================================
-
 app.get('/users/:uuid', async (req, res) => {
     const { users, userProfiles } = require('./models');
     try {
@@ -348,7 +82,6 @@ app.get('/users/:uuid', async (req, res) => {
         return res.status(500).send('Server mein error hai...');
     }
 });
-
 
 // USERNAME_FIND // =============================================================================================================================================================
 app.get('/:username', async (req, res) => {
@@ -694,9 +427,63 @@ app.put('/userProfile/update/:uuid', async (req, res) => {
 // PROFILE GET // =============================================================================================================================================================
 
 // SUGGESTED_FRIEND
+// app.get('/api/userProfiles/:uuid', async (req, res) => {
+//     const { userProfiles, profilePhotes, users } = require('./models');
+//     const { uuid } = req.params;
+//     try {
+//         const userProfile = await userProfiles.findOne({
+//             where: { uuid },
+//             include: [
+//                 { model: users, attributes: ['username'] },
+//                 { model: profilePhotes, attributes: ['photoURL'] }
+//             ],
+//         });
+
+//         if (!userProfile) {
+//             return res.status(404).json({ error: 'User profile not found' });
+//         }
+
+//         const otherUserProfiles = await userProfiles.findAll({
+//             where: {
+//                 uuid: {
+//                     [Op.ne]: userProfile.uuid
+//                 }
+//             },
+//             include: [
+//                 { model: users, attributes: ['username'] },
+//                 { model: profilePhotes, attributes: ['photoURL'] }
+//             ],
+//         });
+//         const response = otherUserProfiles.map(profile => {
+//             return {
+//                 uuid: profile.uuid,
+//                 username: profile.user ? profile.user.username : null,
+//                 photoURL: profile.profilePhote ? profile.profilePhote.photoURL : null,
+//                 firstName: profile.firstName,
+//                 lastName: profile.lastName,
+//             };
+//         });
+//         res.send({ userProfiles: response });
+//     } catch (e) {
+//         console.log(e);
+//         res.status(500).send({ e: 'Internal Server Error' });
+//     }
+// });
+
+
+// SUGGESTED_FRIEND
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
+
 app.get('/api/userProfiles/:uuid', async (req, res) => {
-    const { userProfiles, profilePhotes, users } = require('./models');
+    const { userProfiles, profilePhotes, users, friendRequests } = require('./models');
     const { uuid } = req.params;
+
     try {
         const userProfile = await userProfiles.findOne({
             where: { uuid },
@@ -721,21 +508,50 @@ app.get('/api/userProfiles/:uuid', async (req, res) => {
                 { model: profilePhotes, attributes: ['photoURL'] }
             ],
         });
-        const response = otherUserProfiles.map(profile => {
-            return {
-                uuid: profile.uuid,
-                username: profile.user ? profile.user.username : null,
-                photoURL: profile.profilePhote ? profile.profilePhote.photoURL : null,
-                firstName: profile.firstName,
-                lastName: profile.lastName,
-            };
-        });
+
+        const filteredProfiles = await Promise.all(otherUserProfiles.map(async (profile) => {
+            const isSender = await friendRequests.findOne({
+                where: {
+                    senderId: userProfile.id,
+                    receiverId: profile.id,
+                    status: { [Op.in]: ['1', '2'] }
+                }
+            });
+
+            const isReceiver = await friendRequests.findOne({
+                where: {
+                    senderId: profile.id,
+                    receiverId: userProfile.id,
+                    status: { [Op.in]: ['1', '2'] }
+                }
+            });
+
+            if (!isSender && !isReceiver) {
+                return {
+                    uuid: profile.uuid,
+                    username: profile.user ? profile.user.username : null,
+                    photoURL: profile.profilePhotos ? profile.profilePhotos.photoURL : null,
+                    firstName: profile.firstName,
+                    lastName: profile.lastName,
+                    createdAt: profile.createdAt
+                };
+            }
+            return null;
+        }));
+
+        const validProfiles = filteredProfiles.filter(profile => profile !== null);
+        const shuffledProfiles = shuffleArray(validProfiles);
+        const response = shuffledProfiles.slice(0, Math.min(10, shuffledProfiles.length));
+
         res.send({ userProfiles: response });
     } catch (e) {
         console.log(e);
-        res.status(500).send({ e: 'Internal Server Error' });
+        res.status(500).send({ error: 'Internal Server Error' });
     }
 });
+
+
+
 
 // FIND_SENDER_AND_RICVER_FRIENDREUSRT
 app.get('/api/friendrequests/find/:uuid', async (req, res) => {
@@ -1255,6 +1071,10 @@ app.post('/friendRequests', async (req, res) => {
         return res.status(400).send({ error: 'SenderUUID and ReceiverUUID are required' });
     }
 
+    if (senderUUID === receiverUUID) {
+        return res.status(400).send({ error: 'Cannot send friend request to yourself' });
+    }
+
     try {
         const senderProfile = await userProfiles.findOne({ where: { uuid: senderUUID } });
         const receiverProfile = await userProfiles.findOne({ where: { uuid: receiverUUID } });
@@ -1315,6 +1135,47 @@ app.post('/friendRequests', async (req, res) => {
         res.status(400).send({ error: error.message });
     }
 });
+
+// GET_PROFILES_FROM_FRIEND_REQUESTS //
+app.get('/get/friendRequests/:uuid', async (req, res) => {
+    const uuid = req.params.uuid;
+
+    try {
+        const userProfile = await userProfiles.findOne({ where: { uuid: uuid } });
+
+        if (!userProfile) {
+            return res.status(400).send({ error: 'User profile not found' });
+        }
+
+        const sentRequests = await friendRequests.findAll({
+            where: { senderId: userProfile.id },
+            attributes: ['receiverId']
+        });
+
+        const receivedRequests = await friendRequests.findAll({
+            where: { receiverId: userProfile.id },
+            attributes: ['senderId']
+        });
+
+        const senderUUIDs = sentRequests.map(request => request.receiverId);
+        const receiverUUIDs = receivedRequests.map(request => request.senderId);
+
+        const senderProfiles = await userProfiles.findAll({
+            where: { id: senderUUIDs },
+            attributes: ['uuid']
+        });
+
+        const receiverProfiles = await userProfiles.findAll({
+            where: { id: receiverUUIDs },
+            attributes: ['uuid']
+        });
+
+        res.send({ senderProfiles: senderProfiles, receiverProfiles: receiverProfiles });
+    } catch (error) {
+        res.status(400).send({ error: error.message });
+    }
+});
+
 
 app.get('/api/user/profile/receiver/:uuid', async (req, res) => {
     const uuid = req.params.uuid;
@@ -1873,25 +1734,161 @@ app.post('/api/create/posts/:uuid', async (req, res) => {
 //     }
 // });
 
+// // FRIEND-MAIN-POST //
+// app.get('/find/api/posts/friend/:userProfileUuid', async (req, res) => {
+//     try {
+//         // Find the user profile
+//         const userProfile = await userProfiles.findOne({
+//             where: { uuid: req.params.userProfileUuid },
+//             include: [
+//                 {
+//                     model: users,
+//                     attributes: ['username'],
+//                 },
+//             ],
+//         });
 
+//         if (!userProfile) {
+//             return res.status(404).json({ success: false, error: 'User profile not found' });
+//         }
 
+//         // Find friends of the user using the friendships model
+//         const userFriends = await friendships.findAll({
+//             where: {
+//                 [Op.or]: [
+//                     { userProfile1Id: userProfile.id },
+//                     { userProfile2Id: userProfile.id },
+//                 ],
+//             },
+//         });
 
+//         // Extract friend user profile IDs
+//         const friendUserProfileIds = userFriends.map(friendship => {
+//             return friendship.userProfile1Id === userProfile.id
+//                 ? friendship.userProfile2Id
+//                 : friendship.userProfile1Id;
+//         });
 
+//         // Find user profiles of friends
+//         const friendsUserProfiles = await userProfiles.findAll({
+//             where: { id: friendUserProfileIds },
+//             include: [
+//                 {
+//                     model: users,
+//                     attributes: ['username'],
+//                 },
+//             ],
+//         });
 
+//         // // Fetch posts of the user's friends
+//         const friendsPosts = await userPosts.findAll({
+//             where: { userProfileId: friendUserProfileIds, isVisibility: 1 },
+//             order: [['createdAt', 'DESC']],
+//         });
 
+//         // Find the associated profile photos for friends
+//         const friendsProfilePhotos = await profilePhotes.findAll({
+//             where: { userProfileId: friendUserProfileIds },
+//             attributes: ['userProfileId', 'photoURL'],
+//         });
 
+//         // Map friends' profile photos to their respective user profiles
+//         const friendsProfilePhotosMap = friendsProfilePhotos.reduce((map, photo) => {
+//             map[photo.userProfileId] = photo.photoURL;
+//             return map;
+//         }, {});
 
+//         // Fetch posts of the current user
+//         const userPostsList = await userPosts.findAll({
+//             where: { userProfileId: userProfile.id },
+//         });
 
+//         // Find the associated profile photo based on the user profile ID
+//         const foundProfilePhoto = await profilePhotes.findOne({
+//             where: { userProfileId: userProfile.id },
+//             attributes: ['photoURL'],
+//         });
 
+//         // Include user profile without the repositories information
+//         const userProfileWithoutRepos = {
+//             id: userProfile.id,
+//             username: userProfile.user.username,
+//             photoURL: foundProfilePhoto ? foundProfilePhoto.photoURL : null,
+//         };
 
+//         // Include user profile, user information, friends' user profiles, and posts in the response
+//         const responseObj = {
+//             success: true,
+//             userProfile: userProfileWithoutRepos,
+//             friends: friendsUserProfiles.map(friend => ({
+//                 id: friend.id,
+//                 username: friend.user.username,
+//                 photoURL: friendsProfilePhotosMap[friend.id] || null,
+//             })),
+//             // posts: userPostsList,
+//             friendsPosts: friendsPosts,
+//         };
 
+//         // Send response
+//         return res.status(200).json(responseObj);
+//     } catch (error) {
+//         console.error(error);
+//         res.status(500).json({ success: false, error: 'Internal Server Error' });
+//     }
+// });
 
+// USER-MAIN-POST //
+// app.get('/find/api/posts/user/:userProfileUuid', async (req, res) => {
+//     try {
+//         // Find the user profile
+//         const userProfile = await userProfiles.findOne({
+//             where: { uuid: req.params.userProfileUuid },
+//             include: [
+//                 {
+//                     model: users,
+//                     attributes: ['username'],
+//                 },
+//             ],
+//         });
 
+//         if (!userProfile) {
+//             return res.status(404).json({ success: false, error: 'User profile not found' });
+//         }
 
+//         // Fetch posts of the current user
+//         const userPostsList = await userPosts.findAll({
+//             where: { userProfileId: userProfile.id },
+//             order: [['createdAt', 'DESC']],
+//         });
 
+//         // Find the associated profile photo based on the user profile ID
+//         const foundProfilePhoto = await profilePhotes.findOne({
+//             where: { userProfileId: userProfile.id },
+//             attributes: ['photoURL'],
+//         });
 
+//         // Include user profile without the repositories information
+//         const userProfileWithoutRepos = {
+//             id: userProfile.id,
+//             username: userProfile.user.username,
+//             photoURL: foundProfilePhoto ? foundProfilePhoto.photoURL : null,
+//         };
 
-// FRIEND-MAIN-POST //
+//         // Include only user profile and user's posts in the response
+//         const responseObj = {
+//             success: true,
+//             userProfile: userProfileWithoutRepos,
+//             posts: userPostsList,
+//         };
+
+//         // Send response
+//         return res.status(200).json(responseObj);
+//     } catch (error) {
+//         console.error(error);
+//         res.status(500).json({ success: false, error: 'Internal Server Error' });
+//     }
+// });
+
 app.get('/find/api/posts/friend/:userProfileUuid', async (req, res) => {
     try {
         // Find the user profile
@@ -1966,6 +1963,13 @@ app.get('/find/api/posts/friend/:userProfileUuid', async (req, res) => {
             attributes: ['photoURL'],
         });
 
+        // Fetch liked posts by the current user
+        const likedPostIds = await postLikes.findAll({
+            where: { userProfileId: userProfile.id },
+            attributes: ['postId'],
+        });
+        const likedPosts = likedPostIds.map(like => like.postId);
+
         // Include user profile without the repositories information
         const userProfileWithoutRepos = {
             id: userProfile.id,
@@ -1984,6 +1988,7 @@ app.get('/find/api/posts/friend/:userProfileUuid', async (req, res) => {
             })),
             // posts: userPostsList,
             friendsPosts: friendsPosts,
+            likedPosts: likedPosts, // New addition
         };
 
         // Send response
@@ -1994,7 +1999,6 @@ app.get('/find/api/posts/friend/:userProfileUuid', async (req, res) => {
     }
 });
 
-// USER-MAIN-POST //
 app.get('/find/api/posts/user/:userProfileUuid', async (req, res) => {
     try {
         // Find the user profile
@@ -2019,7 +2023,7 @@ app.get('/find/api/posts/user/:userProfileUuid', async (req, res) => {
         });
 
         // Find the associated profile photo based on the user profile ID
-        const foundProfilePhoto = await profilePhotes.findOne({
+        const foundProfilePhoto = await profilePhotes.findOne({  // Retaining the variable name
             where: { userProfileId: userProfile.id },
             attributes: ['photoURL'],
         });
@@ -2031,11 +2035,19 @@ app.get('/find/api/posts/user/:userProfileUuid', async (req, res) => {
             photoURL: foundProfilePhoto ? foundProfilePhoto.photoURL : null,
         };
 
+        // Fetch liked posts by the current user
+        const likedPostIds = await postLikes.findAll({
+            where: { userProfileId: userProfile.id },
+            attributes: ['postId'],
+        });
+        const likedPosts = likedPostIds.map(like => like.postId);
+
         // Include only user profile and user's posts in the response
         const responseObj = {
             success: true,
             userProfile: userProfileWithoutRepos,
             posts: userPostsList,
+            likedPosts: likedPosts, // New addition
         };
 
         // Send response
@@ -2045,44 +2057,6 @@ app.get('/find/api/posts/user/:userProfileUuid', async (req, res) => {
         res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 // GET POST BY ID
@@ -2293,6 +2267,22 @@ app.get('/api/user/posts/profile/public/:uuid', async (req, res) => {
     }
 });
 
+// POST_LIKE_COUNT
+app.get('/api/post/likes/count/:postId', async (req, res) => {
+    try {
+        const postId = req.params.postId;
+
+        // Find the total number of likes for the specified post
+        const likeCount = await postLikes.count({
+            where: { postId: postId },
+        });
+
+        return res.status(200).json({ success: true, likeCount: likeCount });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+});
 
 // POST_COMMENT // =============================================================================================================================================================
 
@@ -2612,14 +2602,14 @@ app.post('/post/like', async (req, res) => {
 
         if (existingLike) {
             await existingLike.destroy();
-            res.status(200).json({ message: 'Post unliked successfully.' });
+            res.status(200).json({ like: false });
         } else {
             await postLikes.create({
                 userProfileId: user.id,
                 postId,
             });
 
-            res.status(200).json({ message: 'Post liked successfully.' });
+            res.status(200).json({ like: true });
         }
     } catch (error) {
         console.error(error);
@@ -2627,373 +2617,47 @@ app.post('/post/like', async (req, res) => {
     }
 });
 
-
-// CRUSH_FRIEND // =============================================================================================================================================================
-const { crushes, ignores } = require('./models');
-
-app.post('/public/crushesRequest/', async (req, res) => {
-    const senderUUID = req.body.senderId;
-    const receiverUUID = req.body.receiverId;
-
-    if (!senderUUID || !receiverUUID) {
-        return res.status(400).send({ error: 'SenderUUID and ReceiverUUID are required' });
-    }
-
+// GET_LIKED_POSTS_BY_USER //
+app.get('/post/:userProfileId/liked', async (req, res) => {
     try {
-        const senderUserInstance = await users.findOne({
-            where: { uuid: senderUUID },
-            include: userProfiles,
-        });
-
-        if (!senderUserInstance) {
-            return res.status(400).send({ error: 'Sender profile not found' });
-        }
-
-        const senderUserProfileUuid = senderUserInstance.userProfile.uuid;
-
-        if (senderUserProfileUuid === receiverUUID) {
-            return res.status(422).send({ error: 'Unprocessable Entity: Cannot send your own profile to a crush' });
-        }
-
-        const senderProfile = await userProfiles.findOne({ where: { uuid: senderUserProfileUuid } });
-        const receiverProfile = await userProfiles.findOne({ where: { uuid: receiverUUID } });
-
-        if (!senderProfile || !receiverProfile) {
-            return res.status(400).send({ error: 'Sender or receiver profile not found' });
-        }
-
-        const existingRequest = await crushes.findOne({
+        const { userProfileId } = req.params;
+        const user = await userProfiles.findOne({
             where: {
-                userProfile1Id: senderProfile.id,
-                userProfile2Id: receiverProfile.id,
+                uuid: userProfileId,
             },
         });
 
-        if (existingRequest) {
-            const newStatus = existingRequest.status === '1' ? '2' : '1';
-
-            const updatedCrushRequest = await crushes.update(
-                { status: newStatus },
-                {
-                    where: {
-                        userProfile1Id: senderProfile.id,
-                        userProfile2Id: receiverProfile.id,
-                    },
-                }
-            );
-
-            if (updatedCrushRequest > 0) {
-                return res.send({ success: true, message: 'Crush request updated successfully' });
-            } else {
-                return res.status(404).send({ success: false, error: 'Crush request not found' });
-            }
-        } else {
-            // If the request doesn't exist, create a new one
-            const newCrushRequest = await crushes.create({
-                userProfile1Id: senderProfile.id,
-                userProfile2Id: receiverProfile.id,
-                status: '2',
-            });
-
-            return res.send({ success: true, message: 'Crush request sent successfully', newCrushRequest });
-        }
-
-    } catch (error) {
-        res.status(400).send({ error: error.message });
-    }
-});
-
-app.get('/get/public/crushesRequest/:uuid', async (req, res) => {
-    try {
-        const userProfileUuid = req.params.uuid;
-
-        const crush = await crushes.findOne({
-            where: {
-                [Op.or]: [
-                    { '$userProfile1.uuid$': { [Op.eq]: userProfileUuid } },
-                    { '$userProfile2.uuid$': { [Op.eq]: userProfileUuid } },
-                ],
-            },
-            include: [
-                { model: userProfiles, as: 'userProfile1' },
-                { model: userProfiles, as: 'userProfile2' },
-            ],
-        });
-
-        if (!crush) {
-            return res.status(202).json({ success: false });
-        }
-
-        const status = crush.status;
-        res.json({ success: true, status });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Internal Server Error' });
-    }
-});
-
-app.get('/get/countCrushes/count/:profileUuid', async (req, res) => {
-    try {
-        const { profileUuid } = req.params;
-
-        const userProfile = await userProfiles.findOne({
-            where: { uuid: profileUuid },
-        });
-
-        if (!userProfile) {
+        if (!user) {
             return res.status(404).json({ error: 'User profile not found' });
         }
 
-        const crushCount = await crushes.count({
+        const likedPostIds = await postLikes.findAll({
             where: {
-                [sequelize.Op.or]: [
-                    { userProfile1Id: userProfile.id },
-                    { userProfile2Id: userProfile.id },
-                ],
+                userProfileId: user.id,
             },
+            attributes: ['postId'],
         });
+        const likedPosts = likedPostIds.map(like => like.postId);
 
-        res.json({ crushCount });
-    } catch (error) {
-        console.error('Error counting crushes:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
-// CRUSH DATA GET //
-app.get('/get/userProfileCrushes/:profileUUID', async (req, res) => {
-    const profileUUID = req.params.profileUUID;
-
-    if (!profileUUID) {
-        return res.status(400).send({ error: 'Profile UUID is required' });
-    }
-
-    try {
-        const userProfile = await userProfiles.findOne({
-            where: { uuid: profileUUID }
-        });
-
-        if (!userProfile) {
-            return res.status(404).send({ error: 'User profile not found' });
-        }
-
-        const crushRequests = await crushes.findAll({
-            where: {
-                userProfile1Id: userProfile.id,
-                status: '2'
-            },
-            include: [
-                {
-                    model: userProfiles,
-                    as: 'userProfile2',
-                    attributes: ['firstName', 'lastName', 'uuid'],
-                    include: [
-                        {
-                            model: users,
-                            attributes: ['username']
-                        },
-                        {
-                            model: profilePhotes,
-                            attributes: ['photoURL']
-                        }
-                    ]
-                }
-            ]
-        });
-
-        const crushesInfo = crushRequests.map(crush => ({
-            userProfile2: crush.userProfile2
-        }));
-
-        return res.send({ success: true, crushesInfo });
-    } catch (error) {
-        res.status(400).send({ error: error.message });
-    }
-});
-
-// IGNORE_FRIEND // =============================================================================================================================================================
-
-app.post('/public/ignoreRequest/', async (req, res) => {
-    const senderUUID = req.body.senderId;
-    const receiverUUID = req.body.receiverId;
-
-    if (!senderUUID || !receiverUUID) {
-        return res.status(400).send({ error: 'SenderUUID and ReceiverUUID are required' });
-    }
-
-    try {
-        const senderUserInstance = await users.findOne({
-            where: { uuid: senderUUID },
-            include: userProfiles,
-        });
-
-        if (!senderUserInstance) {
-            return res.status(400).send({ error: 'Sender profile not found' });
-        }
-
-        const senderUserProfileUuid = senderUserInstance.userProfile.uuid;
-
-        if (senderUserProfileUuid === receiverUUID) {
-            return res.status(422).send({ error: 'Unprocessable Entity: Cannot send your own profile to a ingonre' });
-        }
-
-        const senderProfile = await userProfiles.findOne({ where: { uuid: senderUserProfileUuid } });
-        const receiverProfile = await userProfiles.findOne({ where: { uuid: receiverUUID } });
-
-        if (!senderProfile || !receiverProfile) {
-            return res.status(400).send({ error: 'Sender or receiver profile not found' });
-        }
-
-        const existingRequest = await ignores.findOne({
-            where: {
-                userProfile1Id: senderProfile.id,
-                userProfile2Id: receiverProfile.id,
-            },
-        });
-
-        if (existingRequest) {
-            const newStatus = existingRequest.status === '1' ? '2' : '1';
-
-            const updatedIgnoreRequest = await ignores.update(
-                { status: newStatus },
-                {
-                    where: {
-                        userProfile1Id: senderProfile.id,
-                        userProfile2Id: receiverProfile.id,
-                    },
-                }
-            );
-
-            if (updatedIgnoreRequest > 0) {
-                return res.send({ success: true, message: 'Ignore request updated successfully' });
-            } else {
-                return res.status(404).send({ success: false, error: 'Ignore request not found' });
-            }
-        } else {
-            const ignoreRequest = await ignores.create({
-                userProfile1Id: senderProfile.id,
-                userProfile2Id: receiverProfile.id,
-                status: '2',
-            });
-
-            return res.send({ success: true, message: 'Ignore request sent successfully', ignoreRequest });
-        }
-
-    } catch (error) {
-        res.status(400).send({ error: error.message });
-    }
-});
-
-app.get('/get/public/ignoreRequest/:uuid', async (req, res) => {
-    try {
-        const userProfileUuid = req.params.uuid;
-
-        const ignore = await ignores.findOne({
-            where: {
-                [Op.or]: [
-                    { '$userProfile1.uuid$': { [Op.eq]: userProfileUuid } },
-                    { '$userProfile2.uuid$': { [Op.eq]: userProfileUuid } },
-                ],
-            },
-            include: [
-                { model: userProfiles, as: 'userProfile1' },
-                { model: userProfiles, as: 'userProfile2' },
-            ],
-        });
-
-        if (!ignore) {
-            return res.status(202).json({ success: false });
-        }
-
-        const status = ignore.status;
-        res.json({ success: true, status });
+        res.status(200).json(likedPosts);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Internal Server Error' });
-    }
-});
-
-app.get('/get/ignoreCount/:profileUuid', async (req, res) => {
-    try {
-        const { profileUuid } = req.params;
-
-        const userProfile = await userProfiles.findOne({
-            where: { uuid: profileUuid },
-        });
-
-        if (!userProfile) {
-            return res.status(404).json({ error: 'User profile not found' });
-        }
-
-        const ignoreCount = await ignores.count({
-            where: {
-                [sequelize.Op.or]: [
-                    { userProfile1Id: userProfile.id },
-                    { userProfile2Id: userProfile.id },
-                ],
-            },
-        });
-
-        res.json({ ignoreCount });
-    } catch (error) {
-        console.error('Error counting ignores:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-// IGNORE DATA GET //
-app.get('/get/userProfileIgnores/:profileUUID', async (req, res) => {
-    const profileUUID = req.params.profileUUID;
 
-    if (!profileUUID) {
-        return res.status(400).send({ error: 'Profile UUID is required' });
-    }
 
-    try {
-        const userProfile = await userProfiles.findOne({
-            where: { uuid: profileUUID }
-        });
 
-        if (!userProfile) {
-            return res.status(404).send({ error: 'User profile not found' });
-        }
 
-        const ignoreList = await ignores.findAll({
-            where: {
-                userProfile1Id: userProfile.id,
-                status: '2'
-            },
-            include: [
-                {
-                    model: userProfiles,
-                    as: 'userProfile2',
-                    attributes: ['firstName', 'lastName', 'uuid'],
-                    include: [
-                        {
-                            model: users,
-                            attributes: ['username']
-                        },
-                        {
-                            model: profilePhotes,
-                            attributes: ['photoURL']
-                        }
-                    ]
-                }
-            ]
-        });
 
-        const ignoreInfo = ignoreList.map(ignore => ({
-            userProfile2: ignore.userProfile2
-        }));
 
-        return res.send({ success: true, ignoreInfo });
-    } catch (error) {
-        res.status(400).send({ error: error.message });
-    }
-});
+
+// =============================================================================================================================================================
 
 // FRIENDSHIP, CRUSH, AND IGNORE COUNT //
 app.get('/api/friendships-crushes-ignores/count/:profileUuid', async (req, res) => {
+    const { crushes, ignores } = require('./models');
     try {
         const profileUuid = req.params.profileUuid;
 
@@ -3042,297 +2706,3 @@ app.get('/api/friendships-crushes-ignores/count/:profileUuid', async (req, res) 
     }
 });
 
-// SEARCH_PROFILE =============================================================================================================================================================
-
-// SEARCH_PROFILE
-app.get('/search/:searchTerm', async (req, res) => {
-    const { users, userProfiles, profilePhotes } = require('./models');
-    try {
-        const { searchTerm } = req.params;
-
-        const usersList = await users.findAll({
-            where: {
-                [Op.and]: [
-                    {
-                        [Op.or]: [
-                            { username: { [Op.like]: `%${searchTerm}%` } },
-                            { '$userProfile.firstName$': { [Op.like]: `%${searchTerm}%` } },
-                            { '$userProfile.lastName$': { [Op.like]: `%${searchTerm}%` } }
-                        ]
-                    },
-                    { isActive: 1 }
-                ]
-            },
-            include: [{
-                model: userProfiles,
-                as: 'userProfile',
-                attributes: ['uuid', 'firstName', 'lastName'],
-                include: [{
-                    model: profilePhotes,
-                    attributes: ['photoURL']
-                }]
-            }],
-            attributes: ['uuid', 'username'],
-            order: literal(
-                "CASE " +
-                "WHEN username LIKE :searchTerm THEN 1 " +
-                "WHEN '$userProfile.firstName$' LIKE :searchTerm THEN 2 " +
-                "WHEN '$userProfile.lastName$' LIKE :searchTerm THEN 3 " +
-                "ELSE 4 " +
-                "END"
-            ),
-            replacements: { searchTerm: `%${searchTerm}%` }
-        });
-
-        if (usersList.length > 0) {
-            res.send({ success: true, users: usersList });
-        } else {
-            res.send({ success: false, message: 'No matching users found' });
-        }
-    } catch (error) {
-        console.error(error);
-        res.status(500).send({ error: 'Internal Server Error' });
-    }
-});
-
-
-// STORIES // =============================================================================================================================================================
-
-const { stories } = require('./models');
-
-// CREATE STORIES //
-app.post('/stories/:uuid', async (req, res) => {
-    try {
-
-        const { data, postText, textColor } = req.body;
-
-        if (typeof data !== 'string' || data.trim() === '') {
-            return res.status(400).json({ success: false, error: 'Invalid or missing data or postText' });
-        }
-
-        const matches = data.match(/^data:image\/([a-zA-Z0-9]+);base64,/);
-        const fileExtension = matches ? matches[1] : 'png';
-        const uuidN = uuid.v4();
-        const newFileName = `${uuidN}.${fileExtension}`;
-        const image = Buffer.from(data.replace(/^data:image\/[a-zA-Z0-9]+;base64,/, ''), 'base64');
-        const filePath = __dirname + '/stories/' + newFileName;
-        fs.writeFileSync(filePath, image);
-        const fileLink = newFileName;
-        console.log(fileLink);
-
-        const userProfile = await userProfiles.findOne({
-            where: { uuid: req.params.uuid },
-        });
-
-        if (!userProfile) {
-            return res.status(404).json({ success: false, error: 'User profile not found' });
-        }
-
-        const newPost = await stories.create({
-            userProfileId: userProfile.id,
-            text: postText || null,
-            image: fileLink,
-            textColor: textColor
-        });
-
-        return res.status(201).send({ success: true, post: newPost });
-    } catch (error) {
-        console.log(error);
-        res.status(500).send({ success: false, error: 'Internal Server Error' });
-    }
-});
-
-// GET STORIES //
-app.get('/get/stories/:uuid', async (req, res) => {
-    try {
-        const userProfile = await userProfiles.findOne({
-            where: { uuid: req.params.uuid },
-        });
-
-        if (!userProfile) {
-            return res.status(404).json({ success: false, error: 'User profile not found' });
-        }
-
-        const userStories = await stories.findAll({
-            where: { userProfileId: userProfile.id },
-            attributes: ['id', 'text', 'textColor', 'image', 'createdAt', 'uuid'],
-            order: [['createdAt', 'DESC']],
-        });
-
-        return res.status(200).json({ success: true, stories: userStories });
-    } catch (error) {
-        console.log(error);
-        res.status(500).json({ success: false, error: 'Internal Server Error' });
-    }
-});
-
-// DELETE STORY //
-app.delete('/delete/story/:uuid', async (req, res) => {
-    try {
-        const storyToDelete = await stories.findOne({
-            where: { uuid: req.params.uuid },
-        });
-
-        if (!storyToDelete) {
-            return res.status(404).json({ success: false, error: 'Story not found' });
-        }
-
-        const filePath = __dirname + '/stories/' + storyToDelete.image;
-        fs.unlinkSync(filePath);
-
-        await storyToDelete.destroy();
-
-        return res.status(200).json({ success: true, message: 'Story deleted successfully' });
-    } catch (error) {
-        console.log(error);
-        res.status(500).json({ success: false, error: 'Internal Server Error' });
-    }
-});
-
-// AUTO DELETE //
-app.post('/schedule/delete/stories', async (req, res) => {
-    try {
-        const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
-
-        const storiesToDelete = await stories.findAll({
-            where: {
-                createdAt: {
-                    [Op.lt]: twelveHoursAgo
-                }
-            }
-        });
-
-        for (const story of storiesToDelete) {
-            const filePath = __dirname + '/stories/' + story.image;
-            fs.unlinkSync(filePath);
-            await story.destroy();
-        }
-
-        console.log('Automatic deletion of stories completed successfully.');
-        res.status(200).json({ success: true, message: 'Automatic deletion of stories completed successfully.' });
-    } catch (error) {
-        console.error('Error occurred during automatic deletion of stories:', error);
-        res.status(500).json({ success: false, error: 'Internal Server Error' });
-    }
-});
-
-cron.schedule('0 */12 * * *', async () => {
-    try {
-        await fetch('http://localhost:8080/schedule/delete/stories', { method: 'POST', credentials: 'include' });
-    } catch (error) {
-        console.error('Error occurred while triggering automatic deletion of stories:', error);
-    }
-});
-
-// FIND_FRIEND_STRORY
-app.get('/api/friendships/users/story/:profileUuid', async (req, res) => {
-    try {
-        const profileUuid = req.params.profileUuid;
-
-        const userProfile = await userProfiles.findOne({
-            where: { uuid: profileUuid },
-        });
-
-        if (!userProfile) {
-            return res.status(404).send({ error: 'User profile not found' });
-        }
-
-        const foundFriendships = await friendships.findAll({
-            where: {
-                [Op.or]: [
-                    { userProfile1Id: userProfile.id },
-                    { userProfile2Id: userProfile.id },
-                ],
-            },
-            include: [
-                {
-                    model: userProfiles,
-                    as: 'userProfile1',
-                    attributes: ['id', 'uuid'],
-                    include: [{ model: users, attributes: ['username'] }],
-                },
-                {
-                    model: userProfiles,
-                    as: 'userProfile2',
-                    attributes: ['id', 'uuid'],
-                    include: [{ model: users, attributes: ['username'] }],
-                },
-            ],
-        });
-
-        const friendProfiles = await Promise.all(foundFriendships.map(async (friendship) => {
-            const friendUserProfile = friendship.userProfile1.id !== userProfile.id
-                ? friendship.userProfile1
-                : friendship.userProfile2;
-
-            if (friendUserProfile.id === userProfile.id) {
-                return null;
-            }
-
-            const storyExists = await stories.findOne({
-                where: { userProfileId: friendUserProfile.id }
-            });
-
-            if (storyExists) {
-                const photoURLRecord = await profilePhotes.findOne({
-                    where: { userProfileId: friendUserProfile.id },
-                    attributes: ['photoURL'],
-                });
-
-                const photoURL = photoURLRecord?.photoURL;
-                const completeImageUrl = photoURL ? `http://static.profile.local/${photoURL}` : null;
-
-                return {
-                    ...friendUserProfile.toJSON(),
-                    photoURL: completeImageUrl,
-                    username: friendUserProfile.user.username,
-                };
-            } else {
-                return null;
-            }
-        }));
-
-        const filteredFriendProfiles = friendProfiles.filter(profile => profile !== null);
-
-        res.send({ friends: filteredFriendProfiles });
-    } catch (error) {
-        console.error('Error:', error);
-        res.status(500).send({ error: 'Internal Server Error' });
-    }
-});
-
-// GET_FRIEND_STORY
-app.get('/get/friend/stories/:uuid', async (req, res) => {
-    try {
-        const userProfile = await userProfiles.findOne({
-            where: { uuid: req.params.uuid },
-        });
-
-        if (!userProfile) {
-            return res.status(404).json({ success: false, error: 'User profile not found' });
-        }
-
-        const userStories = await stories.findAll({
-            where: {
-                userProfileId: userProfile.id
-            },
-            attributes: ['id', 'text', 'textColor', 'image', 'createdAt', 'uuid'],
-            order: [['createdAt', 'DESC']],
-        });
-
-        return res.status(200).json({ success: true, stories: userStories });
-    } catch (error) {
-        console.log(error);
-        res.status(500).json({ success: false, error: 'Internal Server Error' });
-    }
-});
-
-
-
-
-
-
-
-
-// ========== SERVER ========== //
-server.listen(8080, () => console.log('connected...'));
