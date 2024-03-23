@@ -110,6 +110,10 @@ io.on('connection', (socket) => {
             });
 
             // io.to(room).emit('new-message', newMessage);
+
+            // Emit notification to the receiver
+            // io.to(receiverUuid).emit('notification-message', newMessage);
+            
         } catch (error) {
             console.error('Error processing message:', error);
         }
