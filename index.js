@@ -36,22 +36,91 @@ const storiesRoutes = require('./routes/stories');
 const searchRoutes = require('./routes/search');
 const crushesRoutes = require('./routes/crushes');
 const ignoresRoutes = require('./routes/ignores');
+const chatRoutes = require('./routes/chat');
 
-// AUTH //
+// ========== // AUTH // ========== //
 app.use('/auth', authRoutes);
 
-// STORIES //
+// ========== // STORIES // ========== //
 app.use('/stories', storiesRoutes);
 
-// SEARCH //
+// ========== // SEARCH // ========== //
 app.use('/search', searchRoutes)
 
-// CRUSH //
+// ========== // CRUSH // ========== //
 app.use('/crushes', crushesRoutes);
 
-// IGNORE //
+// ========== // IGNORE // ========== //
 app.use('/ignores', ignoresRoutes);
 
+// ========== // CHAT // ========== //
+app.use('/chat', chatRoutes);
+
+io.on('connection', (socket) => {
+    const { messages } = require('./models');
+    const userId = socket.handshake.query.userId;
+    console.log('User connected with ID:', userId);
+
+    socket.on('join-room', ({ room }) => {
+        socket.join(room);
+        console.log(`User joined room: ${room}`);
+    });
+
+    socket.on('leave-room', ({ room }) => {
+        socket.leave(room);
+        console.log(`User left room: ${room}`);
+    });
+
+    socket.on('send-message', async (data) => {
+        try {
+            const { senderUuid, receiverUuid, content, room } = data;
+
+            const [senderUser, receiverUser] = await Promise.all([
+                userProfiles.findOne({ where: { uuid: senderUuid } }),
+                userProfiles.findOne({ where: { uuid: receiverUuid } })
+            ]);
+
+            if (!senderUser || !receiverUser) {
+                console.error('Sender or receiver not found');
+                return;
+            }
+
+            const { id: senderId } = senderUser;
+            const { id: receiverId } = receiverUser;
+
+            const newMessage = await messages.create({
+                senderId,
+                receiverId,
+                content,
+                roomId: room,
+            });
+
+            io.to(room).emit('new-message', {
+                senderId: senderUuid,
+                receiverId: receiverUuid,
+                content,
+                room,
+            });
+
+            console.log('New message received on server:', {
+                senderId: senderUuid,
+                receiverId: receiverUuid,
+                content,
+                room,
+            });
+
+            // io.to(room).emit('new-message', newMessage);
+        } catch (error) {
+            console.error('Error processing message:', error);
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log('User disconnected with ID:', userId);
+    });
+});
+
+// ===================== // ===================== // ===================== // ===================== // ===================== // ===================== // ===================== // ===================== //
 
 // ========== // API START // ========== //
 
@@ -1371,154 +1440,6 @@ app.get('/api/friendships/count/:profileUuid', async (req, res) => {
 
 
 //CHAT // =============================================================================================================================================================
-
-const { messages } = require('./models');
-
-io.on('connection', (socket) => {
-    const userId = socket.handshake.query.userId;
-    console.log('User connected with ID:', userId);
-
-    socket.on('join-room', ({ room }) => {
-        socket.join(room);
-        console.log(`User joined room: ${room}`);
-    });
-
-    socket.on('leave-room', ({ room }) => {
-        socket.leave(room);
-        console.log(`User left room: ${room}`);
-    });
-
-    socket.on('send-message', async (data) => {
-        try {
-            const { senderUuid, receiverUuid, content, room } = data;
-
-            const [senderUser, receiverUser] = await Promise.all([
-                userProfiles.findOne({ where: { uuid: senderUuid } }),
-                userProfiles.findOne({ where: { uuid: receiverUuid } })
-            ]);
-
-            if (!senderUser || !receiverUser) {
-                console.error('Sender or receiver not found');
-                return;
-            }
-
-            const { id: senderId } = senderUser;
-            const { id: receiverId } = receiverUser;
-
-            const newMessage = await messages.create({
-                senderId,
-                receiverId,
-                content,
-                roomId: room,
-            });
-
-            io.to(room).emit('new-message', {
-                senderId: senderUuid,
-                receiverId: receiverUuid,
-                content,
-                room,
-            });
-
-            console.log('New message received on server:', {
-                senderId: senderUuid,
-                receiverId: receiverUuid,
-                content,
-                room,
-            });
-
-            // io.to(room).emit('new-message', newMessage);
-        } catch (error) {
-            console.error('Error processing message:', error);
-        }
-    });
-
-    socket.on('disconnect', () => {
-        console.log('User disconnected with ID:', userId);
-    });
-});
-
-// CHAT_GET //
-app.get('/get-messages/:uuid', async (req, res) => {
-    try {
-        const uuid = req.params.uuid;
-
-        const user = await userProfiles.findOne({ where: { uuid } });
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-
-        const userId = user.id;
-
-        const userMessages = await messages.findAll({
-            where: {
-                [Op.or]: [
-                    { senderId: userId },
-                    { receiverId: userId }
-                ]
-            },
-            include: [
-                { model: userProfiles, as: 'sender', attributes: ['uuid'] },
-                { model: userProfiles, as: 'receiver', attributes: ['uuid'] }
-            ]
-        });
-
-        const formattedMessages = userMessages.map(message => {
-            return {
-                id: message.id,
-                content: message.content,
-                sender: message.sender ? message.sender.uuid : null,
-                receiver: message.receiver ? message.receiver.uuid : null,
-                createdAt: message.createdAt,
-            };
-        });
-
-        res.send({ messages: formattedMessages });
-    } catch (error) {
-        console.error('Error retrieving messages:', error);
-        res.status(500).send({ error: 'Internal Server Error' });
-    }
-});
-
-// CHAT_LAST_MESSEGE_GET // 
-app.get('/get-last-message/:uuid', async (req, res) => {
-    try {
-        const uuid = req.params.uuid;
-
-        const user = await userProfiles.findOne({ where: { uuid } });
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-
-        const userId = user.id;
-
-        const lastMessage = await messages.findOne({
-            where: {
-                [Op.or]: [
-                    { senderId: userId },
-                    { receiverId: userId }
-                ]
-            },
-            order: [['createdAt', 'DESC']],
-            limit: 1
-        });
-
-        if (!lastMessage) {
-            return res.status(404).send({ error: 'No messages found for the user' });
-        }
-
-        const lastMessageData = {
-            message: lastMessage.content,
-            timestamp: lastMessage.createdAt,
-            senderId: lastMessage.senderId,
-            receiverId: lastMessage.receiverId
-        };
-
-        res.send({ lastMessage: lastMessageData });
-    } catch (error) {
-        console.error('Error retrieving the last message:', error);
-        res.status(500).send({ error: 'Internal Server Error' });
-    }
-});
 
 
 

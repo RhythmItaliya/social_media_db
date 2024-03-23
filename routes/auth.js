@@ -97,7 +97,7 @@ router.get('/verify/login/:token',
             });
 
             if (!user) {
-                return res.status(404).json({ success: false, error: "Not Found", message: "Token is invalid or already used." });
+                return res.status(404).json({ isValid: 0 });
             }
 
             const newToken = uuid.v1();
@@ -114,7 +114,7 @@ router.get('/verify/login/:token',
                 }
             );
 
-            return res.status(200).json({ success: true, message: "Account verified successfully." });
+            return res.status(200).json({ isValid: 1 });
 
         } catch (e) {
             console.error(e);
