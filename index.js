@@ -37,6 +37,7 @@ const searchRoutes = require('./routes/search');
 const crushesRoutes = require('./routes/crushes');
 const ignoresRoutes = require('./routes/ignores');
 const chatRoutes = require('./routes/chat');
+const ratingsRoutes = require('./routes/ratings')
 
 // ========== // AUTH // ========== //
 app.use('/auth', authRoutes);
@@ -52,6 +53,9 @@ app.use('/crushes', crushesRoutes);
 
 // ========== // IGNORE // ========== //
 app.use('/ignores', ignoresRoutes);
+
+// ========== // RATTINGS // ========== //
+app.use('/ratings', ratingsRoutes);
 
 // ========== // CHAT // ========== //
 app.use('/chat', chatRoutes);
@@ -123,6 +127,8 @@ io.on('connection', (socket) => {
         console.log('User disconnected with ID:', userId);
     });
 });
+
+
 
 // ===================== // ===================== // ===================== // ===================== // ===================== // ===================== // ===================== // ===================== //
 

@@ -44,9 +44,11 @@ module.exports = (sequelize, DataTypes) => {
       userProfiles.hasMany(models.postLikes, { foreignKey: 'userProfileId', as: 'likedPosts' });
 
       // stories
-      // In userProfiles model's associate method
       userProfiles.hasMany(models.stories, { foreignKey: 'userProfileId', as: 'stories' });
 
+      // rattings
+      userProfiles.hasMany(models.ratings, { foreignKey: 'rateUserProfile1Id', as: 'givenRatings' });
+      userProfiles.hasMany(models.ratings, { foreignKey: 'rateUserProfile2Id', as: 'receivedRatings' });
     }
   }
 

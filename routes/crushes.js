@@ -6,7 +6,7 @@ const { crushes, users, userProfiles, profilePhotes } = require('../models');
 
 // CRUSH POST // =============================================================================================================================================================
 
-// 1
+// 1 
 router.post('/public/crushesRequest/', async (req, res) => {
     const senderUUID = req.body.senderId;
     const receiverUUID = req.body.receiverId;
@@ -81,6 +81,8 @@ router.post('/public/crushesRequest/', async (req, res) => {
 
 
 // CRUSH PUBLIC // =============================================================================================================================================================
+
+// 2
 router.get('/get/public/crushesRequest/:uuid', async (req, res) => {
     try {
         const userProfileUuid = req.params.uuid;
@@ -111,6 +113,8 @@ router.get('/get/public/crushesRequest/:uuid', async (req, res) => {
 });
 
 // CRUSH COUNT =============================================================================================================================================================
+
+// 3
 router.get('/get/countCrushes/count/:profileUuid', async (req, res) => {
     try {
         const { profileUuid } = req.params;
@@ -141,6 +145,7 @@ router.get('/get/countCrushes/count/:profileUuid', async (req, res) => {
 
 // CRUSH DATA GET // =============================================================================================================================================================
 
+// 4
 router.get('/get/userProfileCrushes/:profileUUID', async (req, res) => {
     const profileUUID = req.params.profileUUID;
 
