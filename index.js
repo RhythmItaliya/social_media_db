@@ -10,6 +10,7 @@ const { param, body, validationResult } = require('express-validator');
 const { Op, literal } = require('sequelize');
 const uuid = require('uuid');
 const fs = require('fs');
+const path = require('path');
 const cron = require('node-cron');
 
 const cors = require('cors');
@@ -37,7 +38,13 @@ const searchRoutes = require('./routes/search');
 const crushesRoutes = require('./routes/crushes');
 const ignoresRoutes = require('./routes/ignores');
 const chatRoutes = require('./routes/chat');
-const ratingsRoutes = require('./routes/ratings')
+const ratingsRoutes = require('./routes/ratings');
+const adminRoutes = require('./routes/admins');
+const reportsRoutes = require('./routes/reports');
+const settingsRoutes = require('./routes/settings');
+
+// ========== // ADMIN // ========== //
+app.use('/admins', adminRoutes);
 
 // ========== // AUTH // ========== //
 app.use('/auth', authRoutes);
@@ -56,6 +63,12 @@ app.use('/ignores', ignoresRoutes);
 
 // ========== // RATTINGS // ========== //
 app.use('/ratings', ratingsRoutes);
+
+// ========== // REPORTS // ========== //
+app.use('/reports', reportsRoutes);
+
+// ========== // SETTINGS // ========== //
+app.use('/settings', settingsRoutes);
 
 // ========== // CHAT // ========== //
 app.use('/chat', chatRoutes);
@@ -117,7 +130,7 @@ io.on('connection', (socket) => {
 
             // Emit notification to the receiver
             // io.to(receiverUuid).emit('notification-message', newMessage);
-            
+
         } catch (error) {
             console.error('Error processing message:', error);
         }
@@ -312,10 +325,6 @@ app.post('/api/profilepage/create/:uuid', async (req, res) => {
 
 // DARK MODE // =============================================================================================================================================================
 app.get('/api/user/profiles/:uuid/mode', async (req, res) => {
-    const { users, userProfiles } = require('./models');
-
-    console.log('Received UUID:', req.params.uuid);
-
     try {
         const user = await users.findOne({
             where: { uuid: req.params.uuid }
@@ -333,17 +342,66 @@ app.get('/api/user/profiles/:uuid/mode', async (req, res) => {
             return res.status(404).json({ error: 'User profile not found' });
         }
 
-        const isDarkMode = userProfile.darkMode === 1;
-
-        res.status(200).send({ darkMode: isDarkMode });
+        res.status(200).json({ darkMode: userProfile.darkMode });
     } catch (error) {
         console.error(error);
-        return res.status(500).send('There was a server error...');
+        return res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
 
-app.put('/api/user/profiles/:uuid/mode', async (req, res) => {
+// app.post('/api/user/profiles/:uuid/mode', async (req, res) => {
+//     const { users, userProfiles } = require('./models');
+
+//     try {
+//         const user = await users.findOne({
+//             where: { uuid: req.params.uuid }
+//         });
+
+//         if (!user) {
+//             return res.status(404).json({ error: 'User not found' });
+//         }
+
+//         const userProfile = await userProfiles.findOne({
+//             where: { userId: user.id }
+//         });
+
+//         if (!userProfile) {
+//             return res.status(404).json({ error: 'User profile not found' });
+//         }
+
+//         const [rowsUpdated] = await userProfiles.update(
+//             { darkMode: 1 },
+//             {
+//                 where: {
+//                     userId: user.id,
+//                     darkMode: 0,
+//                 }
+//             }
+//         );
+
+//         if (rowsUpdated === 0) {
+//             await userProfiles.update(
+//                 { darkMode: 0 },
+//                 {
+//                     where: {
+//                         userId: user.id,
+//                         darkMode: 1
+//                     }
+//                 }
+//             );
+
+//             return res.status(200).json({ message: 'Dark mode disabled successfully', darkMode: 0 });
+//         }
+
+//         return res.status(200).json({ message: 'Dark mode enabled successfully', darkMode: 1 });
+//     } catch (error) {
+//         console.error(error);
+//         return res.status(500).json({ error: 'Internal Server Error' });
+//     }
+// });
+
+app.post('/api/user/profiles/:uuid/mode', async (req, res) => {
     const { users, userProfiles } = require('./models');
 
     try {
@@ -363,19 +421,37 @@ app.put('/api/user/profiles/:uuid/mode', async (req, res) => {
             return res.status(404).json({ error: 'User profile not found' });
         }
 
-        const updatedDarkModeValue = req.body.darkMode ? 1 : 0;
+        let darkModeValue;
+        if (req.body.darkMode) {
+            darkModeValue = 1;
+        } else {
+            darkModeValue = 0;
+        }
 
-        await userProfile.update({ darkMode: updatedDarkModeValue });
+        const [rowsUpdated] = await userProfiles.update(
+            { darkMode: darkModeValue },
+            {
+                where: {
+                    userId: user.id,
+                    darkMode: { [Op.not]: darkModeValue },
+                }
+            }
+        );
 
-        await userProfile.save();
+        if (rowsUpdated === 0) {
+            return res.status(200).json({
+                message: `Dark mode ${darkModeValue === 1 ? 'enabled' : 'disabled'} successfully`,
+                darkMode: darkModeValue
+            });
+        }
 
-        res.status(200).send({
-            message: 'Dark mode updated successfully',
-            darkModeValue: updatedDarkModeValue,
+        return res.status(200).json({
+            message: `Dark mode ${darkModeValue === 1 ? 'enabled' : 'disabled'} successfully`,
+            darkMode: darkModeValue
         });
     } catch (error) {
         console.error(error);
-        return res.status(500).send('There was a server error...');
+        return res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
@@ -411,96 +487,6 @@ app.post('/userProfile/create/:uuid', async (req, res) => {
 });
 
 //  FIND FATA FOR SETTINGS // =============================================================================================================================================================
-app.get('/userProfile/get/:uuid', async (req, res) => {
-    const { userProfiles, users, profilePhotes } = require('./models');
-
-    try {
-        const userProfile = await userProfiles.findOne({
-            where: { uuid: req.params.uuid },
-            include: [
-                {
-                    model: users,
-                    attributes: ['username'],
-                },
-                {
-                    model: profilePhotes,
-                    attributes: ['photoURL'],
-                },
-            ],
-        });
-
-        if (!userProfile) {
-            return res.status(404).send({ error: 'User profile not found' });
-        }
-
-        // Construct the complete URL for the image
-        const baseImageUrl = 'http://static.profile.local/';
-        const completeImageUrl = userProfile.profilePhote ? baseImageUrl + userProfile.profilePhote.photoURL : null;
-
-        const response = {
-            username: userProfile.user ? userProfile.user.username : null,
-            photoURL: completeImageUrl,
-            firstName: userProfile.firstName,
-            lastName: userProfile.lastName,
-            gender: userProfile.gender,
-            birthdate: userProfile.birthdate,
-            location: userProfile.location,
-            bio: userProfile.bio,
-        };
-
-        res.status(200).send(response);
-    } catch (error) {
-        console.log(error);
-        return res.status(500).send('Internal Server Error');
-    }
-});
-
-// UPDATE USER PROFILE
-app.put('/userProfile/update/:uuid', async (req, res) => {
-    const { userProfiles, users } = require('./models');
-
-    try {
-        const userProfile = await userProfiles.findOne({
-            where: { uuid: req.params.uuid },
-            include: [
-                {
-                    model: users,
-                    attributes: ['username'],
-                },
-            ],
-        });
-
-        if (!userProfile) {
-            return res.status(404).send({ error: 'User profile not found' });
-        }
-
-        // Update user profile data based on request body
-        userProfile.firstName = req.body.firstName || userProfile.firstName;
-        userProfile.lastName = req.body.lastName || userProfile.lastName;
-        userProfile.gender = req.body.gender || userProfile.gender;
-        userProfile.birthdate = req.body.birthdate || userProfile.birthdate;
-        userProfile.location = req.body.location || userProfile.location;
-        userProfile.bio = req.body.bio || userProfile.bio;
-
-        // Save the updated user profile
-        await userProfile.save();
-
-        const response = {
-            username: userProfile.user ? userProfile.user.username : null,
-            firstName: userProfile.firstName,
-            lastName: userProfile.lastName,
-            gender: userProfile.gender,
-            birthdate: userProfile.birthdate,
-            location: userProfile.location,
-            bio: userProfile.bio,
-        };
-
-        res.status(200).send(response);
-    } catch (error) {
-        console.log(error);
-        return res.status(500).send('Internal Server Error');
-    }
-});
 
 
 // PROFILE GET // =============================================================================================================================================================
@@ -723,7 +709,6 @@ app.get('/profilephotoes/:uuid', async (req, res) => {
     }
 });
 
-
 // FINDPROFILE PHOTO
 app.get('/profile/profilePhoto/:uuid', async (req, res) => {
     const { userProfiles, profilePhotes } = require('./models');
@@ -760,158 +745,9 @@ app.get('/profile/profilePhoto/:uuid', async (req, res) => {
     }
 });
 
-// POST_PROFILE_PHOTOES
-app.post('/profilephotoes/:uuid', async (req, res) => {
-    const { profilePhotes, userProfiles } = require('./models');
-    try {
-
-        const profile = await userProfiles.findOne({
-            where: { uuid: req.params.uuid }
-        });
-
-        let originalFileName = req.body.name;
-        let fileExtension = originalFileName.split('.').pop();
-
-        let uuidN = uuid.v4();
-
-        let newFileName = uuidN + '.' + fileExtension;
-
-        let image = Buffer.from(req.body.data, 'base64');
-        let filePath = __dirname + '/Profilephotoes/' + newFileName;
-        fs.writeFileSync(filePath, image);
-
-        let fileLink = newFileName;
-        console.log(fileLink);
-
-        await profilePhotes.create({
-            userProfileId: profile.id,
-            photoURL: fileLink,
-        });
-
-        res.send('ok');
-    } catch (e) {
-        console.log(error);
-        return res.status(500).send('Lagata hai sever me error hai...');
-    }
-});
 
 
-// UPDATE PROFILE PHOTO
-app.put('/profilephotoes/update/:uuid', async (req, res) => {
-    const { profilePhotes, userProfiles } = require('./models');
 
-    try {
-        const profile = await userProfiles.findOne({
-            where: { uuid: req.params.uuid }
-        });
-
-        if (!profile) {
-            return res.status(404).send('User profile not found.');
-        }
-
-        // Find the existing profile photo associated with the user profile
-        const existingPhoto = await profilePhotes.findOne({
-            where: { userProfileId: profile.id }
-        });
-
-        // Get the existing file path
-        const existingFilePath = __dirname + '/Profilephotoes/' + existingPhoto.photoURL;
-
-        if (existingPhoto) {
-            let newOriginalFileName = req.body.name;
-
-            if (newOriginalFileName) {
-                let newFileExtension = newOriginalFileName.split('.').pop();
-
-                let uuidN = uuid.v4();
-                let newFileName = uuidN + '.' + newFileExtension;
-
-                let newImage = Buffer.from(req.body.data, 'base64');
-                let filePath = __dirname + '/Profilephotoes/' + newFileName;
-                fs.writeFileSync(filePath, newImage);
-
-                // Update the database with the new profile photo URL
-                const updatedPhoto = await existingPhoto.update({
-                    photoURL: newFileName,
-                    data: newImage,
-                });
-
-                // Delete the existing file from the server if the update is successful
-                if (updatedPhoto) {
-                    fs.unlink(existingFilePath, (err) => {
-                        if (err) {
-                            console.error('Error deleting file:', err);
-                            res.status(500).send('Error deleting file.');
-                        } else {
-                            console.log('Deleting file at path:', existingFilePath);
-                            console.log('File updated successfully');
-                            res.send('ok'); // Send the response here
-                        }
-                    });
-                } else {
-                    console.log('Error updating photo in the database.');
-                    res.status(500).send('Error updating file.');
-                }
-            } else {
-                console.log('Error: req.body.name is undefined or null.');
-                res.status(400).send('Bad Request: req.body.name is undefined or null.');
-            }
-        } else {
-            // If there is no existing photo, you may want to handle this case accordingly
-            console.log('No existing photo found.');
-            res.status(404).send('No existing photo found.');
-        }
-    } catch (e) {
-        console.error(e);
-        return res.status(500).send('Error updating file.');
-    }
-});
-
-// DELETE_PROFILE_PHOTOES
-app.delete('/profilephotoes/delete/:uuid', async (req, res) => {
-
-    const { profilePhotes, userProfiles } = require('./models');
-    try {
-
-        // Find the user profile associated with the UUID
-        const profile = await userProfiles.findOne({
-            where: { uuid: req.params.uuid }
-        });
-
-        if (!profile) {
-            return res.status(404).send('User profile not found.');
-        }
-
-        // Find the profile photo associated with the user profile
-        const profilePhoto = await profilePhotes.findOne({
-            where: { userProfileId: profile.id }
-        });
-
-        if (!profilePhoto) {
-            return res.status(404).send('Profile photo not found.');
-        }
-
-        try {
-
-            const filePath = __dirname + '/Profilephotoes/' + profilePhoto.photoURL;
-            console.log('Deleting file at path:', filePath);
-
-            fs.unlinkSync(filePath);
-            console.log('File deleted successfully:', filePath);
-
-        } catch (error) {
-            console.error('Error deleting file:', error.message);
-        }
-
-        // Delete the profile photo entry from the database
-        await profilePhoto.destroy();
-
-        res.send('ok');
-    } catch (e) {
-        console.error(e);
-        return res.status(500).send('Error deleting file.');
-    }
-});
 
 
 // FRIEND // =============================================================================================================================================================
@@ -1867,7 +1703,7 @@ app.get('/find/api/posts/friend/:userProfileUuid', async (req, res) => {
 
         // // Fetch posts of the user's friends
         const friendsPosts = await userPosts.findAll({
-            where: { userProfileId: friendUserProfileIds, isVisibility: 1 },
+            where: { userProfileId: friendUserProfileIds, isVisibility: 1, isTakeDown: 0 },
             order: [['createdAt', 'DESC']],
         });
 
@@ -1949,7 +1785,7 @@ app.get('/find/api/posts/user/:userProfileUuid', async (req, res) => {
 
         // Fetch posts of the current user
         const userPostsList = await userPosts.findAll({
-            where: { userProfileId: userProfile.id },
+            where: { userProfileId: userProfile.id, isTakeDown: 0 },
             order: [['createdAt', 'DESC']],
         });
 
@@ -2144,7 +1980,8 @@ app.get('/api/user/posts/profile/:uuid', async (req, res) => {
 
         const posts = await userPosts.findAll({
             where: {
-                userProfileId: userProfile.id
+                userProfileId: userProfile.id,
+                isTakeDown: 0,
             },
             attributes: ['postUploadURLs']
         });
@@ -2186,7 +2023,9 @@ app.get('/api/user/posts/profile/public/:uuid', async (req, res) => {
 
         const posts = await userPosts.findAll({
             where: {
-                userProfileId: userProfile.id
+                userProfileId: userProfile.id,
+                isVisibility: 1,
+                isTakeDown: 0,
             },
             attributes: ['postUploadURLs']
         });

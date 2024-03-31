@@ -55,11 +55,13 @@ router.post('/register',
                 return res.status(409).send('Username is already taken');
             }
 
+            const hashedPassword = await bcrypt.hash(req.body.password, 10);
+
             const token = uuid.v1();
 
             users.create({
                 username: req.body.username,
-                password: req.body.password,
+                password: hashedPassword,
                 email: req.body.email,
                 token: token
             });
@@ -150,7 +152,8 @@ router.post('/login',
                         { username: req.body.username },
                         { email: req.body.username }
                     ],
-                    isActive: 1
+                    isActive: 1,
+                    // isTerminate: 0
                 }
             });
 
@@ -158,12 +161,16 @@ router.post('/login',
                 return res.status(401).json({ error: 'Unauthorized', message: 'Invalid username or password.' });
             }
 
+            if (user.isTerminate == 1) {
+                return res.status(403).json({ error: 'Forbidden', message: 'Your account has been terminated.' });
+            }
+
             const passwordMatch = await bcrypt.compare(req.body.password, user.password);
             if (!passwordMatch) {
                 return res.status(401).json({ error: 'Unauthorized', message: 'Invalid username or password.' });
             }
 
-            const token = jwt.sign({ uuid: user.uuid }, 'YOUR_SECRET_KEY', { expiresIn: '7d' });
+            const token = jwt.sign({ uuid: user.uuid }, 'ASDFGHWDEFGHJKJNHBSDFGKMNB', { expiresIn: '7d' });
 
             res.cookie('X-Access-Token', token, { maxAge: 7776000000, signed: true, path: '/', secure: true, httpOnly: true });
 

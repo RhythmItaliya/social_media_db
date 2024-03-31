@@ -19,6 +19,9 @@ module.exports = (sequelize, DataTypes) => {
 
       // likes
       userPosts.hasMany(models.postLikes, { foreignKey: 'postId', as: 'likes' });
+
+      // reports
+      userPosts.hasMany(models.reports, { foreignKey: 'postID' });
     }
   }
   userPosts.init({
@@ -41,6 +44,11 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING
     },
     isVisibility: {
+      allowNull: false,
+      type: DataTypes.BOOLEAN,
+      defaultValue: 0
+    },
+    isTakeDown: {
       allowNull: false,
       type: DataTypes.BOOLEAN,
       defaultValue: 0

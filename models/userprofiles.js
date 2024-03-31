@@ -49,6 +49,9 @@ module.exports = (sequelize, DataTypes) => {
       // rattings
       userProfiles.hasMany(models.ratings, { foreignKey: 'rateUserProfile1Id', as: 'givenRatings' });
       userProfiles.hasMany(models.ratings, { foreignKey: 'rateUserProfile2Id', as: 'receivedRatings' });
+
+      // reports
+      userProfiles.hasMany(models.reports, { foreignKey: 'userID' });
     }
   }
 

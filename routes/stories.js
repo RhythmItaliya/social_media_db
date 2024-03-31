@@ -27,7 +27,6 @@ router.post('/stories/:uuid', async (req, res) => {
         const filePath = path.join(__dirname, '..', 'stories', newFileName);
         fs.writeFileSync(filePath, image);
         const fileLink = newFileName;
-        console.log(fileLink);
 
         const userProfile = await userProfiles.findOne({
             where: { uuid: req.params.uuid },

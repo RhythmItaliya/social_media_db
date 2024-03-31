@@ -10,7 +10,10 @@ module.exports = (sequelize, DataTypes) => {
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
+
       users.hasOne(models.userProfiles, { foreignKey: 'userId' });
+      users.belongsTo(models.admins, { foreignKey: 'adminId' });
+      
     }
   }
   users.init({
@@ -46,6 +49,16 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       type: DataTypes.UUID
     },
+    adminId: {
+      allowNull: false,
+      type: DataTypes.INTEGER,
+      defaultValue: 1
+    },
+    isTerminate: {
+      allowNull: false,
+      type: DataTypes.BOOLEAN,
+      defaultValue: 0
+    },
     uuid: {
       allowNull: false,
       type: DataTypes.UUID,
@@ -56,11 +69,12 @@ module.exports = (sequelize, DataTypes) => {
     modelName: 'users',
   });
 
-  users.beforeSave('dcryptPass', (data, _) => {
-    const bcrypt = require('bcrypt');
-    let plainPass = data.getDataValue('password');
-    let ecryptPass = bcrypt.hashSync(plainPass, 10);
-    data.setDataValue('password', ecryptPass);
-  });
+  // users.beforeSave('dcryptPass', (data, _) => {
+  //   const bcrypt = require('bcrypt');
+  //   let plainPass = data.getDataValue('password');
+  //   let ecryptPass = bcrypt.hashSync(plainPass, 10);
+  //   data.setDataValue('password', ecryptPass);
+  // });
+
   return users;
 };
