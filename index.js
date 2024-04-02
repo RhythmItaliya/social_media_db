@@ -44,6 +44,7 @@ const reportsRoutes = require('./routes/reports');
 const settingsRoutes = require('./routes/settings');
 const postsRoutes = require('./routes/posts');
 const postCommentsRoutes = require('./routes/postComments');
+const hashtagsRoutes = require('./routes/hashtags');
 
 // ========== // ADMIN // ========== //
 app.use('/admins', adminRoutes);
@@ -80,6 +81,9 @@ app.use('/comments', postCommentsRoutes);
 
 // ========== // CHAT // ========== //
 app.use('/chat', chatRoutes);
+
+// ========== // CHAT // ========== //
+app.use('/hashtags', hashtagsRoutes);
 
 io.on('connection', (socket) => {
     const { messages } = require('./models');
@@ -869,7 +873,7 @@ app.get('/friendRequests/:receiverUUID', async (req, res) => {
                     firstName: parsedData.firstName,
                     lastName: parsedData.lastName,
                     completeImageUrl: parsedData.completeImageUrl,
-                    username: username,
+                    // username: username,
                 },
             };
         });
