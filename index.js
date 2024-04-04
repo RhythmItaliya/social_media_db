@@ -45,6 +45,7 @@ const settingsRoutes = require('./routes/settings');
 const postsRoutes = require('./routes/posts');
 const postCommentsRoutes = require('./routes/postComments');
 const hashtagsRoutes = require('./routes/hashtags');
+const notificationsRouter = require('./routes/notifications');
 
 // ========== // ADMIN // ========== //
 app.use('/admins', adminRoutes);
@@ -79,11 +80,14 @@ app.use('/posts', postsRoutes);
 // ========== // POST COMMENTS // ========== //
 app.use('/comments', postCommentsRoutes);
 
-// ========== // CHAT // ========== //
-app.use('/chat', chatRoutes);
+// ========== // POST NOTIFICATION // ========== //
+app.use('/notifications', notificationsRouter);
+
+// ========== // HASHTAGS // ========== //
+app.use('/hashtags', hashtagsRoutes);
 
 // ========== // CHAT // ========== //
-app.use('/hashtags', hashtagsRoutes);
+app.use('/chat', chatRoutes);
 
 io.on('connection', (socket) => {
     const { messages } = require('./models');
@@ -152,7 +156,6 @@ io.on('connection', (socket) => {
         console.log('User disconnected with ID:', userId);
     });
 });
-
 
 // ===================== // ===================== // ===================== // ===================== // ===================== // ===================== // ===================== // ===================== //
 

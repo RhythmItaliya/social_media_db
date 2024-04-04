@@ -5,7 +5,7 @@ const uuid = require('uuid');
 const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
-const { admins, users, userProfiles, userPosts, stories, ratings, profilePhotes, postLikes, postComments, commentLikes, friendRequests, friendships, messages, ignores, crushes, reports, defaultAvatars } = require('../models');
+const { admins, users, userProfiles, userPosts, stories, ratings, profilePhotes, postLikes, postComments, commentLikes, friendRequests, friendships, messages, ignores, crushes, reports, defaultAvatars, postNotification } = require('../models');
 
 
 
@@ -56,6 +56,14 @@ router.post('/api/create/posts/:uuid', async (req, res) => {
             isVisibility: validatedIsVisibility,
             postUploadURLs: fileLink,
             hashtags: req.body.hashtags,
+        });
+
+        // Notification Creation Logic
+        const notificationMessageId = `${userProfile.uuid}`;
+        await postNotification.create({
+            postId: newPost.id,
+            notificationMessage: notificationMessageId,
+            isRead: false,
         });
 
         return res.status(201).send({ success: true, post: newPost });

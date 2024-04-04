@@ -22,6 +22,9 @@ module.exports = (sequelize, DataTypes) => {
 
       // reports
       userPosts.hasMany(models.reports, { foreignKey: 'postID' });
+
+      // postNotification
+      userPosts.hasMany(models.postNotification, { foreignKey: 'postId', as: 'notifications' });
     }
   }
   userPosts.init({
