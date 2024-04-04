@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { Op } = require('sequelize');
-const { userProfiles, postNotification, friendships, userPosts, users, profilePhotes } = require('../models');
+const { userProfiles, postNotifications, friendships, userPosts, users, profilePhotes } = require('../models');
 
 
 // // POST NOTIFICATION //
@@ -39,7 +39,7 @@ router.get('/all/post/notifications/:uuid', async (req, res) => {
 
         const latestFriendshipCreatedAt = Math.max(...userFriendships.map(friendship => friendship.createdAt));
 
-        const notifications = await postNotification.findAll({
+        const notifications = await postNotifications.findAll({
             where: {
                 postId: postIds,
                 createdAt: { [Op.gt]: latestFriendshipCreatedAt },
@@ -53,7 +53,6 @@ router.get('/all/post/notifications/:uuid', async (req, res) => {
         res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 });
-
 
 router.get('/post/notifications/:uuid', async (req, res) => {
     try {
@@ -89,7 +88,7 @@ router.get('/post/notifications/:uuid', async (req, res) => {
 
         const latestFriendshipCreatedAt = Math.max(...userFriendships.map(friendship => friendship.createdAt));
 
-        const notifications = await postNotification.findAll({
+        const notifications = await postNotifications.findAll({
             where: {
                 postId: postIds,
                 createdAt: { [Op.gt]: latestFriendshipCreatedAt },
@@ -105,12 +104,11 @@ router.get('/post/notifications/:uuid', async (req, res) => {
     }
 });
 
-
 router.post('/post/notifications/mark/as/read', async (req, res) => {
     try {
         const { notificationIds } = req.body;
 
-        await postNotification.update({ isRead: true }, {
+        await postNotifications.update({ isRead: true }, {
             where: {
                 id: notificationIds
             }

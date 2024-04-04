@@ -977,6 +977,7 @@ app.post('/friendRequests', async (req, res) => {
     }
 });
 
+
 // GET_PROFILES_FROM_FRIEND_REQUESTS //
 app.get('/get/friendRequests/:uuid', async (req, res) => {
     const uuid = req.params.uuid;
