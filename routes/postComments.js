@@ -5,7 +5,7 @@ const uuid = require('uuid');
 const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
-const { admins, users, userProfiles, userPosts, stories, ratings, profilePhotes, postLikes, postComments, commentLikes, friendRequests, friendships, messages, ignores, crushes, reports, defaultAvatars } = require('../models');
+const { admins, users, userProfiles, userPosts, stories, ratings, profilePhotes, postLikes, postComments, commentLikes, friendRequests, friendships, messages, ignores, crushes, reports, defaultAvatars, postLikeNotifications } = require('../models');
 
 
 
@@ -315,6 +315,19 @@ router.post('/post/like', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
+        const post = await userPosts.findOne({
+            where: {
+                id: postId,
+            },
+            include: [{ model: userProfiles, as: 'user' }],
+        });
+
+        if (!post) {
+            return res.status(404).json({ error: 'Post not found' });
+        }
+
+        const postOwnerProfileId = post.user.id;
+
         const existingLike = await postLikes.findOne({
             where: {
                 userProfileId: user.id,
@@ -331,6 +344,27 @@ router.post('/post/like', async (req, res) => {
                 postId,
             });
 
+            if (user.id !== postOwnerProfileId) {
+                const existingNotification = await postLikeNotifications.findOne({
+                    where: {
+                        postId: postId,
+                        userProfileId: postOwnerProfileId,
+                        notificationMessage: `${user.uuid}`,
+                    },
+                });
+
+                if (existingNotification) {
+                    await existingNotification.update({ isRead: false });
+                } else {
+                    await postLikeNotifications.create({
+                        postId: postId,
+                        userProfileId: postOwnerProfileId,
+                        notificationMessage: `${user.uuid}`,
+                        isRead: false,
+                    });
+                }
+            }
+
             res.status(200).json({ like: true });
         }
     } catch (error) {
@@ -338,6 +372,8 @@ router.post('/post/like', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
+
 
 // 8 // GET_LIKED_POSTS_BY_USER // =============================================================================================================================================================
 router.get('/post/:userProfileId/liked', async (req, res) => {
@@ -377,6 +413,74 @@ router.get('/post/:userProfileId/liked', async (req, res) => {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// router.post('/post/like', async (req, res) => {
+//     try {
+//         const { userProfileId, postId } = req.body;
+
+//         const user = await userProfiles.findOne({
+//             where: {
+//                 uuid: userProfileId,
+//             },
+//         });
+
+//         if (!user) {
+//             return res.status(404).json({ error: 'User not found' });
+//         }
+
+//         const existingLike = await postLikes.findOne({
+//             where: {
+//                 userProfileId: user.id,
+//                 postId,
+//             },
+//         });
+
+//         if (existingLike) {
+//             await existingLike.destroy();
+//             res.status(200).json({ like: false });
+//         } else {
+//             await postLikes.create({
+//                 userProfileId: user.id,
+//                 postId,
+//             });
+
+//             res.status(200).json({ like: true });
+//         }
+//     } catch (error) {
+//         console.error(error);
+//         res.status(500).json({ error: 'Internal server error' });
+//     }
+// });
 
 
 module.exports = router;

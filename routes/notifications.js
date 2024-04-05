@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { Op } = require('sequelize');
-const { userProfiles, postNotifications, friendships, userPosts, users, profilePhotes } = require('../models');
+const { userProfiles, postNotifications, friendships, userPosts, users, profilePhotes, postLikeNotifications } = require('../models');
 
 
-// // POST NOTIFICATION //
+// POST NOTIFICATION //
 router.get('/all/post/notifications/:uuid', async (req, res) => {
     try {
         const userProfile = await userProfiles.findOne({
@@ -39,13 +39,34 @@ router.get('/all/post/notifications/:uuid', async (req, res) => {
 
         const latestFriendshipCreatedAt = Math.max(...userFriendships.map(friendship => friendship.createdAt));
 
-        const notifications = await postNotifications.findAll({
+        const postNotification = await postNotifications.findAll({
             where: {
                 postId: postIds,
                 createdAt: { [Op.gt]: latestFriendshipCreatedAt },
             },
             order: [['createdAt', 'DESC']],
         });
+
+        const postLikeNotification = await postLikeNotifications.findAll({
+            where: {
+                userProfileId: userProfile.id,
+                createdAt: { [Op.gt]: latestFriendshipCreatedAt },
+            },
+            order: [['createdAt', 'DESC']],
+        });
+
+        const formattedPostNotifications = postNotification.map(notification => ({
+            ...notification.toJSON(),
+            isPost: true,
+        }));
+
+        const formattedPostLikeNotifications = postLikeNotification.map(notification => ({
+            ...notification.toJSON(),
+            isLike: true,
+        }));
+
+        const notifications = [...formattedPostNotifications, ...formattedPostLikeNotifications];
+        notifications.sort((a, b) => b.createdAt - a.createdAt);
 
         res.status(200).json({ success: true, notifications });
     } catch (error) {
@@ -88,14 +109,38 @@ router.get('/post/notifications/:uuid', async (req, res) => {
 
         const latestFriendshipCreatedAt = Math.max(...userFriendships.map(friendship => friendship.createdAt));
 
-        const notifications = await postNotifications.findAll({
+        const postNotification = await postNotifications.findAll({
             where: {
                 postId: postIds,
                 createdAt: { [Op.gt]: latestFriendshipCreatedAt },
                 isRead: 0
+
             },
             order: [['createdAt', 'DESC']],
         });
+
+        const postLikeNotification = await postLikeNotifications.findAll({
+            where: {
+                userProfileId: userProfile.id,
+                createdAt: { [Op.gt]: latestFriendshipCreatedAt },
+                isRead: 0
+
+            },
+            order: [['createdAt', 'DESC']],
+        });
+
+        const formattedPostNotifications = postNotification.map(notification => ({
+            ...notification.toJSON(),
+            isPost: true,
+        }));
+
+        const formattedPostLikeNotifications = postLikeNotification.map(notification => ({
+            ...notification.toJSON(),
+            isLike: true,
+        }));
+
+        const notifications = [...formattedPostNotifications, ...formattedPostLikeNotifications];
+        notifications.sort((a, b) => b.createdAt - a.createdAt);
 
         res.status(200).json({ success: true, notifications });
     } catch (error) {
@@ -108,7 +153,13 @@ router.post('/post/notifications/mark/as/read', async (req, res) => {
     try {
         const { notificationIds } = req.body;
 
-        await postNotifications.update({ isRead: true }, {
+        await postNotifications.update({ isRead: 1 }, {
+            where: {
+                id: notificationIds
+            }
+        });
+
+        await postLikeNotifications.update({ isRead: 1 }, {
             where: {
                 id: notificationIds
             }
@@ -121,6 +172,7 @@ router.post('/post/notifications/mark/as/read', async (req, res) => {
     }
 });
 
+// USER PROFILE GET FOR NOTIFICATION //
 router.get('/post/notifications/user/:uuid', async (req, res) => {
     try {
         const { uuid } = req.params;
@@ -155,10 +207,6 @@ router.get('/post/notifications/user/:uuid', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
-
-
-
-
 
 
 
