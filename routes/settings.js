@@ -4,7 +4,8 @@ const { Op } = require('sequelize');
 const uuid = require('uuid');
 const fs = require('fs');
 const path = require('path');
-const { users, userProfiles, profilePhotes } = require('../models');
+const { admins, blogComments, blogs, commentLikes, contacts, crushes, defaultAvatars, friendRequests, friendships, ignores, messages, postComments, postLikeNotifications, postLikes, postNotifications, profilePhotes, ratings, reports, stories, userPosts, userProfiles, users } = require('../models');
+
 
 
 // UPDATE USER PROFILE // =============================================================================================================================================================

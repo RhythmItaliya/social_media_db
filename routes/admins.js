@@ -8,7 +8,7 @@ const uuid = require('uuid');
 const sendMail = require('../untils/mailer');
 const fs = require('fs');
 const path = require('path');
-const { admins, users, userProfiles, userPosts, stories, ratings, profilePhotes, postLikes, postComments, commentLikes, friendRequests, friendships, messages, ignores, crushes, reports, defaultAvatars } = require('../models');
+const { admins, blogComments, blogs, commentLikes, contacts, crushes, defaultAvatars, friendRequests, friendships, ignores, messages, postComments, postLikeNotifications, postLikes, postNotifications, profilePhotes, ratings, reports, stories, userPosts, userProfiles, users } = require('../models');
 
 //  RIGISTER API =============================================================================================================================================================
 

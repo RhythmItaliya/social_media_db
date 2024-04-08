@@ -2,7 +2,8 @@
 
 const express = require('express');
 const router = express.Router();
-const { contacts } = require('../models');
+const { admins, blogComments, blogs, commentLikes, contacts, crushes, defaultAvatars, friendRequests, friendships, ignores, messages, postComments, postLikeNotifications, postLikes, postNotifications, profilePhotes, ratings, reports, stories, userPosts, userProfiles, users } = require('../models');
+
 
 router.post('/contactsus', async (req, res) => {
     try {

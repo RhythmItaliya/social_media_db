@@ -5,7 +5,8 @@ const uuid = require('uuid');
 const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
-const { users, stories, userProfiles, friendships, profilePhotes } = require('../models');
+const { admins, blogComments, blogs, commentLikes, contacts, crushes, defaultAvatars, friendRequests, friendships, ignores, messages, postComments, postLikeNotifications, postLikes, postNotifications, profilePhotes, ratings, reports, stories, userPosts, userProfiles, users } = require('../models');
+
 
 // CREATE STORIES // =============================================================================================================================================================
 
