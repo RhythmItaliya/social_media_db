@@ -59,6 +59,7 @@ const darkmodeRoutes = require('./routes/darkmode');
 const createRoutes = require('./routes/createProfile');
 const photosRoutes = require('./routes/profilePhotos');
 const usersRoutes = require('./routes/usersMain');
+const shareRoutes = require('./routes/share');
 
 // ========== // ADMIN // ========== //
 app.use('/admins', adminRoutes);
@@ -119,6 +120,9 @@ app.use('/photos', photosRoutes);
 
 // ========== // USERS // ========== //
 app.use('/users', usersRoutes);
+
+// ========== // SHARE // ========== //
+app.use('/share', shareRoutes);
 
 // ========== // CHAT // ========== //
 app.use('/chat', chatRoutes);
