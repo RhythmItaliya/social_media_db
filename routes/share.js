@@ -35,6 +35,25 @@ router.get('/share/profiles/:uuid', async (req, res) => {
   }
 });
 
+router.get('/share/post/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
 
+    const post = await userPosts.findOne({
+      where: {
+        id: id
+      }
+    });
+
+    if (post) {
+      res.status(200).json({ sharLink: post.sharLink });
+    } else {
+      res.status(404).json({ message: 'Profile not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching post:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
 
 module.exports = router;
