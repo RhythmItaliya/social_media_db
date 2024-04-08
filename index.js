@@ -46,6 +46,8 @@ const postsRoutes = require('./routes/posts');
 const postCommentsRoutes = require('./routes/postComments');
 const hashtagsRoutes = require('./routes/hashtags');
 const notificationsRouter = require('./routes/notifications');
+const contactsUsRouter = require('./routes/contactUs');
+const blogsRoutes = require('./routes/blogs');
 
 // ========== // ADMIN // ========== //
 app.use('/admins', adminRoutes);
@@ -86,8 +88,14 @@ app.use('/notifications', notificationsRouter);
 // ========== // HASHTAGS // ========== //
 app.use('/hashtags', hashtagsRoutes);
 
+// ========== // CONTACTUS // ========== //
+app.use('/contactsus', contactsUsRouter);
+
 // ========== // CHAT // ========== //
 app.use('/chat', chatRoutes);
+
+// ========== // BLOGS // ========== //
+app.use('/blogs', blogsRoutes);
 
 io.on('connection', (socket) => {
     const { messages } = require('./models');
@@ -155,6 +163,31 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('User disconnected with ID:', userId);
     });
+});
+
+app.delete('/chat/delete-chat/:id', async (req, res) => {
+    const { messages } = require('./models');
+    try {
+        const id = req.params.id;
+
+        const deletedMessage = await messages.destroy({
+            where: {
+                id: id
+            }
+        });
+
+        if (deletedMessage === 1) {
+            io.emit('message-deleted', { messageId: id });
+
+            res.status(200).json({ message: 'Message deleted successfully' });
+        } else {
+            res.status(404).json({ error: 'Message not found' });
+        }
+    } catch (error) {
+        // Handle errors
+        console.error('Error deleting message:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
 
 // ===================== // ===================== // ===================== // ===================== // ===================== // ===================== // ===================== // ===================== //
@@ -678,7 +711,7 @@ app.get('/profile/profilePhoto/:uuid', async (req, res) => {
 
 // FRIEND // =============================================================================================================================================================
 
-const {users, userProfiles, friendships, friendRequests, profilePhotes } = require('./models');
+const { users, userProfiles, friendships, friendRequests, profilePhotes } = require('./models');
 
 
 // PUBLIC_PROFILE_SEND_REQUEST //
