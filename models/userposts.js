@@ -79,6 +79,7 @@ module.exports = (sequelize, DataTypes) => {
     sharCount: {
       allowNull: false,
       type: DataTypes.INTEGER,
+      defaultValue: 0
     }
   }, {
     sequelize,
